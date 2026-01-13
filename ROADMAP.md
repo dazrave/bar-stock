@@ -68,6 +68,15 @@
 
 **Key rule**: If a drink can't be made (missing ingredients), it's NEVER shown to guests, even if "visible" is checked.
 
+#### "Running Low" Warnings
+- [ ] Calculate "can make X more" based on lowest ingredient ratio
+  - Example: 90ml vodka left, drink needs 45ml → "Can make 2 more"
+- [ ] Show warning badge on drink cards:
+  - **"Only X left!"** - when can make ≤3
+  - **"Last one!"** - when can make = 1
+- [ ] Visible to both owner and guests (creates urgency!)
+- [ ] Hide drink when can make = 0
+
 #### Owner Menu View
 - [ ] Toggle menu active/inactive
 - [ ] Per-drink toggles: "Show on this menu" / "Hide from this menu"
