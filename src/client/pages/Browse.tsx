@@ -373,9 +373,9 @@ export function Browse() {
   };
 
   // Count how many ingredients we have vs total, and if missing ones are on shopping list
-  const getIngredientCount = (drink: Drink): { have: number; total: number; allMissingOnList: boolean; missingNames: string[] } => {
+  const getIngredientCount = (drink: Drink): { have: number; total: number; someMissingOnList: boolean; allMissingOnList: boolean; missingNames: string[] } => {
     const ingredients = parseIngredients(drink.ingredients_json);
-    if (ingredients.length === 0) return { have: 0, total: 0, allMissingOnList: false, missingNames: [] };
+    if (ingredients.length === 0) return { have: 0, total: 0, someMissingOnList: false, allMissingOnList: false, missingNames: [] };
 
     let have = 0;
     let missingCount = 0;
@@ -402,6 +402,7 @@ export function Browse() {
     return {
       have,
       total: ingredients.length,
+      someMissingOnList: missingOnListCount > 0 && missingOnListCount < missingCount,
       allMissingOnList: missingCount > 0 && missingOnListCount === missingCount,
       missingNames
     };
@@ -592,7 +593,7 @@ export function Browse() {
           {filteredDrinks.map((drink) => {
             const canMake = canMakeDrink(drink);
             const isHidden = drink.hidden === 1;
-            const { have, total, allMissingOnList, missingNames } = getIngredientCount(drink);
+            const { have, total, someMissingOnList, allMissingOnList, missingNames } = getIngredientCount(drink);
             // Not ghosted if can make OR if all missing items are on shopping list
             const isGhosted = isOwner && (!canMake && !allMissingOnList || isHidden);
 
@@ -657,7 +658,10 @@ export function Browse() {
                   >
                     {have}/{total}
                     {!canMake && allMissingOnList && (
-                      <span title="Missing items on shopping list" style={{ marginLeft: "0.125rem" }}>🛒✓</span>
+                      <span title="All missing items on shopping list" style={{ marginLeft: "0.125rem" }}>🛒✓</span>
+                    )}
+                    {!canMake && someMissingOnList && (
+                      <span title="Some missing items on shopping list" style={{ marginLeft: "0.125rem" }}>🛒</span>
                     )}
                   </div>
                 )}
