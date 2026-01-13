@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Bottle } from "../components/Bottle";
 import { useToast } from "../context/ToastContext";
+import { parseVolume, formatVolume } from "../utils/volume";
 
 interface StockItem {
   id: number;
@@ -13,43 +14,6 @@ interface StockItem {
 
 const CATEGORIES = ["Spirits", "Liqueurs", "Mixers", "Wine", "Beer", "Other"];
 
-// Parse volume input - supports ml, cl, and %
-// Examples: "700ml", "70cl", "700", "50%"
-function parseVolume(input: string, totalMl?: number): number | null {
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed) return null;
-
-  // Percentage (requires totalMl)
-  const percentMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*%$/);
-  if (percentMatch) {
-    if (!totalMl) return null;
-    const percent = parseFloat(percentMatch[1]);
-    return Math.round((percent / 100) * totalMl);
-  }
-
-  // Centiliters
-  const clMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*cl$/);
-  if (clMatch) {
-    return Math.round(parseFloat(clMatch[1]) * 10);
-  }
-
-  // Milliliters (explicit or just number)
-  const mlMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*(?:ml)?$/);
-  if (mlMatch) {
-    return Math.round(parseFloat(mlMatch[1]));
-  }
-
-  return null;
-}
-
-// Format volume for display
-function formatVolume(ml: number): string {
-  if (ml >= 1000) {
-    return `${(ml / 1000).toFixed(1)}L`;
-  }
-  return `${ml}ml`;
-}
-
 export function Stock() {
   const [stock, setStock] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +22,7 @@ export function Stock() {
   const [filter, setFilter] = useState("All");
   const [quickEditId, setQuickEditId] = useState<number | null>(null);
   const [quickEditValue, setQuickEditValue] = useState("");
+  const [ingredientSuggestions, setIngredientSuggestions] = useState<string[]>([]);
   const { showToast } = useToast();
 
   // Form state - using strings to allow flexible input
@@ -70,6 +35,11 @@ export function Stock() {
 
   useEffect(() => {
     fetchStock();
+    // Fetch ingredient suggestions for autocomplete
+    fetch("/api/cocktaildb/ingredients")
+      .then((r) => r.json())
+      .then(setIngredientSuggestions)
+      .catch(() => {}); // Silently fail - autocomplete is optional
   }, []);
 
   const fetchStock = async () => {
@@ -197,7 +167,7 @@ export function Stock() {
   const handleQuickEditSave = async (item: StockItem) => {
     const newMl = parseVolume(quickEditValue, item.total_ml);
     if (newMl === null || newMl < 0) {
-      showToast("Invalid amount (try 50%, 350ml, or 35cl)", "error");
+      showToast("Invalid amount (try 50%, 350ml, 12oz)", "error");
       return;
     }
 
@@ -336,10 +306,16 @@ export function Stock() {
               <label className="label">Name</label>
               <input
                 className="input"
+                list="ingredient-suggestions"
                 placeholder="e.g. Absolut Vodka"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
+              <datalist id="ingredient-suggestions">
+                {ingredientSuggestions.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
             </div>
 
             <div className="form-group">
@@ -361,12 +337,12 @@ export function Stock() {
               <label className="label">Bottle Size</label>
               <input
                 className="input"
-                placeholder="700ml, 70cl, or 1000"
+                placeholder="700ml, 70cl, 25oz"
                 value={formData.total_input}
                 onChange={(e) => setFormData({ ...formData, total_input: e.target.value })}
               />
               <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                Accepts: 700ml, 70cl, or just 700
+                Accepts: 700ml, 70cl, 25oz, or just 700
               </div>
             </div>
 
@@ -374,12 +350,12 @@ export function Stock() {
               <label className="label">Current Amount</label>
               <input
                 className="input"
-                placeholder="50%, 350ml, or 35cl"
+                placeholder="50%, 350ml, 12oz"
                 value={formData.current_input}
                 onChange={(e) => setFormData({ ...formData, current_input: e.target.value })}
               />
               <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                Accepts: 50% (of bottle), 350ml, or 35cl
+                Accepts: 50% (of bottle), 350ml, 35cl, or 12oz
               </div>
             </div>
 

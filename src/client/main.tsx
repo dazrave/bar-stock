@@ -8,6 +8,7 @@ import { Drinks } from "./pages/Drinks";
 import { Menu } from "./pages/Menu";
 import { Settings } from "./pages/Settings";
 import { Browse } from "./pages/Browse";
+import { Shopping } from "./pages/Shopping";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ToastProvider } from "./context/ToastContext";
 import "./styles.css";
@@ -44,6 +45,16 @@ function AppRoutes() {
           <ProtectedRoute ownerOnly>
             <App>
               <Stock />
+            </App>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/shopping"
+        element={
+          <ProtectedRoute ownerOnly>
+            <App>
+              <Shopping />
             </App>
           </ProtectedRoute>
         }

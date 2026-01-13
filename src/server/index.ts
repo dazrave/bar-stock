@@ -8,7 +8,9 @@ import {
   ingredientQueries,
   passcodeQueries,
   cocktailDBQueries,
+  shoppingQueries,
   type Stock,
+  type ShoppingListItem,
 } from "./db";
 
 const app = new Hono();
@@ -288,7 +290,13 @@ app.post("/api/cocktaildb/sync", requireAuth(), async (c) => {
   const API_KEY = "1";
   const baseUrl = "https://www.thecocktaildb.com/api/json/v1";
 
+  // Get existing external IDs to skip
+  const existingIds = new Set(
+    cocktailDBQueries.getAllExternalIds.all().map((r) => r.external_id)
+  );
+
   let synced = 0;
+  let skipped = 0;
   const errors: string[] = [];
   const letters = "abcdefghijklmnopqrstuvwxyz".split("");
 
@@ -299,6 +307,12 @@ app.post("/api/cocktaildb/sync", requireAuth(), async (c) => {
 
       if (data.drinks) {
         for (const d of data.drinks) {
+          // Skip if we already have this drink
+          if (existingIds.has(d.idDrink)) {
+            skipped++;
+            continue;
+          }
+
           const ingredients: Array<{ name: string; measure: string }> = [];
           for (let i = 1; i <= 15; i++) {
             const name = d[`strIngredient${i}`];
@@ -326,7 +340,239 @@ app.post("/api/cocktaildb/sync", requireAuth(), async (c) => {
     }
   }
 
-  return c.json({ synced, errors: errors.length > 0 ? errors : undefined });
+  return c.json({ synced, skipped, errors: errors.length > 0 ? errors : undefined });
+});
+
+// Get unique ingredients from CocktailDB for autocomplete
+app.get("/api/cocktaildb/ingredients", requireAuth(true), (c) => {
+  const ingredients = cocktailDBQueries.getUniqueIngredients.all();
+  return c.json(ingredients.map((i) => i.name));
+});
+
+// ============ SHOPPING LIST ROUTES ============
+
+// Get all shopping list items with linked drinks
+app.get("/api/shopping", requireAuth(), (c) => {
+  const items = shoppingQueries.getAll.all();
+  const itemsWithDrinks = items.map((item) => ({
+    ...item,
+    drinks: shoppingQueries.getDrinksByItemId.all(item.id),
+  }));
+  return c.json(itemsWithDrinks);
+});
+
+// Add item to shopping list
+app.post("/api/shopping", requireAuth(), async (c) => {
+  const { ingredient_name, stock_id, quantity, notes, suggested } = await c.req.json();
+
+  // Check if already exists
+  const existing = shoppingQueries.getByName.get(ingredient_name);
+  if (existing) {
+    return c.json({ error: "Item already in shopping list", existing }, 409);
+  }
+
+  const item = shoppingQueries.create.get(
+    ingredient_name,
+    stock_id || null,
+    quantity || 1,
+    notes || null,
+    suggested ? 1 : 0
+  );
+  return c.json(item, 201);
+});
+
+// Delete shopping list item
+app.delete("/api/shopping/:id", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  shoppingQueries.delete.run(id);
+  return c.json({ success: true });
+});
+
+// Mark item as bought - add to stock
+app.post("/api/shopping/:id/bought", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const { total_ml, category } = await c.req.json();
+
+  const item = shoppingQueries.getById.get(id);
+  if (!item) {
+    return c.json({ error: "Not found" }, 404);
+  }
+
+  // If linked to existing stock, refill it
+  if (item.stock_id) {
+    const stock = stockQueries.getById.get(item.stock_id);
+    if (stock) {
+      const newTotal = total_ml || stock.total_ml;
+      stockQueries.update.get(
+        stock.name,
+        stock.category,
+        newTotal, // current = full
+        newTotal,
+        stock.image_path,
+        stock.id
+      );
+      shoppingQueries.delete.run(id);
+      return c.json({ action: "refilled", stockId: item.stock_id, stock });
+    }
+  }
+
+  // If not linked, need bottle size to create stock
+  if (!total_ml) {
+    return c.json({ action: "needs_size", itemId: id, item });
+  }
+
+  // Create new stock item
+  const newStock = stockQueries.create.get(
+    item.ingredient_name,
+    category || "Other",
+    total_ml,
+    total_ml,
+    null
+  );
+
+  shoppingQueries.delete.run(id);
+  return c.json({ action: "created", stock: newStock });
+});
+
+// Mark all items as bought
+app.post("/api/shopping/bought-all", requireAuth(), async (c) => {
+  const { items } = await c.req.json(); // Array of { id, total_ml?, category? }
+  const results: Array<{ id: number; action: string; stock?: Stock }> = [];
+
+  for (const { id, total_ml, category } of items) {
+    const item = shoppingQueries.getById.get(id);
+    if (!item) continue;
+
+    if (item.stock_id) {
+      const stock = stockQueries.getById.get(item.stock_id);
+      if (stock) {
+        const newTotal = total_ml || stock.total_ml;
+        stockQueries.update.get(
+          stock.name,
+          stock.category,
+          newTotal,
+          newTotal,
+          stock.image_path,
+          stock.id
+        );
+        shoppingQueries.delete.run(id);
+        results.push({ id, action: "refilled", stock });
+        continue;
+      }
+    }
+
+    if (total_ml) {
+      const newStock = stockQueries.create.get(
+        item.ingredient_name,
+        category || "Other",
+        total_ml,
+        total_ml,
+        null
+      );
+      shoppingQueries.delete.run(id);
+      results.push({ id, action: "created", stock: newStock! });
+    } else {
+      results.push({ id, action: "needs_size" });
+    }
+  }
+
+  return c.json({ results });
+});
+
+// Get low stock suggestions
+app.get("/api/shopping/suggestions", requireAuth(), (c) => {
+  const lowStock = shoppingQueries.getLowStock.all();
+
+  // For each low-stock item, find drinks that use it
+  const suggestions = lowStock.map((stock) => {
+    const drinks = ingredientQueries.getByDrinkId
+      ? [] // We need a different query for this
+      : [];
+    return {
+      ...stock,
+      drinks,
+    };
+  });
+
+  return c.json(suggestions);
+});
+
+// Add suggestions to shopping list
+app.post("/api/shopping/add-suggestions", requireAuth(), async (c) => {
+  const { stockIds } = await c.req.json(); // Array of stock IDs to add
+
+  const added: ShoppingListItem[] = [];
+  for (const stockId of stockIds) {
+    const stock = stockQueries.getById.get(stockId);
+    if (!stock) continue;
+
+    // Check if already in shopping list
+    const existing = shoppingQueries.getByStockId.get(stockId);
+    if (existing) continue;
+
+    const item = shoppingQueries.create.get(
+      stock.name,
+      stockId,
+      1,
+      null,
+      1 // suggested = true
+    );
+    if (item) added.push(item);
+  }
+
+  return c.json({ added });
+});
+
+// Add missing ingredients from a drink to shopping list
+app.post("/api/shopping/from-drink/:id", requireAuth(), async (c) => {
+  const drinkId = parseInt(c.req.param("id"));
+  const drink = drinkQueries.getById.get(drinkId);
+  if (!drink) {
+    return c.json({ error: "Drink not found" }, 404);
+  }
+
+  const ingredients = ingredientQueries.getByDrinkId.all(drinkId);
+  const added: ShoppingListItem[] = [];
+
+  for (const ing of ingredients) {
+    // Check if ingredient needs to be added
+    let needsAdding = false;
+
+    if (!ing.stock_id) {
+      // Not linked to any stock - add it
+      needsAdding = true;
+    } else {
+      // Linked to stock - check if empty or low
+      const stockItem = stockQueries.getById.get(ing.stock_id);
+      if (!stockItem || stockItem.current_ml === 0) {
+        needsAdding = true;
+      }
+    }
+
+    if (needsAdding) {
+      // Check if already in shopping list
+      const existing = shoppingQueries.getByName.get(ing.ingredient_name);
+      if (existing) {
+        // Just link the drink to existing item
+        shoppingQueries.linkDrink.run(existing.id, drinkId);
+      } else {
+        // Create new shopping list item
+        const item = shoppingQueries.create.get(
+          ing.ingredient_name,
+          ing.stock_id,
+          1,
+          null,
+          0 // not suggested
+        );
+        if (item) {
+          shoppingQueries.linkDrink.run(item.id, drinkId);
+          added.push(item);
+        }
+      }
+    }
+  }
+
+  return c.json({ added, drinkName: drink.name });
 });
 
 // ============ UPLOAD ROUTES ============
@@ -380,6 +626,7 @@ const server = Bun.serve({
     "/browse": homepage,
     "/menu": homepage,
     "/settings": homepage,
+    "/shopping": homepage,
   },
   async fetch(req) {
     const url = new URL(req.url);

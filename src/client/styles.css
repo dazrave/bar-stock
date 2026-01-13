@@ -532,6 +532,29 @@ body {
   min-width: 0;
 }
 
+/* Shopping list styles */
+.shopping-item {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.shopping-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.shopping-item-name {
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
+.shopping-item-drinks {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+}
+
 .stock-name {
   font-weight: 600;
   font-size: 1.125rem;

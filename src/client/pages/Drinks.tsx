@@ -152,6 +152,21 @@ export function Drinks() {
     }
   };
 
+  const handleAddToShopping = async (drink: DrinkItem) => {
+    try {
+      const res = await fetch(`/api/shopping/from-drink/${drink.id}`, { method: "POST" });
+      const data = await res.json();
+
+      if (data.added.length > 0) {
+        showToast(`Added ${data.added.length} items to shopping list`);
+      } else {
+        showToast("All ingredients in stock or already in list");
+      }
+    } catch (err) {
+      showToast("Failed to add to shopping list", "error");
+    }
+  };
+
   const addIngredient = () => {
     setFormData({
       ...formData,
@@ -253,6 +268,14 @@ export function Drinks() {
                 disabled={makingDrink === drink.id}
               >
                 {makingDrink === drink.id ? "Making..." : "🍸 Made It!"}
+              </button>
+
+              <button
+                className="btn btn-secondary"
+                style={{ marginTop: "0.5rem", width: "100%", fontSize: "0.875rem", padding: "0.75rem" }}
+                onClick={() => handleAddToShopping(drink)}
+              >
+                🛒 Add Missing to Shop
               </button>
 
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>

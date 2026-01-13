@@ -61,6 +61,26 @@ db.exec(`
     ingredients_json TEXT,
     scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS shopping_list (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ingredient_name TEXT NOT NULL,
+    stock_id INTEGER,
+    quantity INTEGER DEFAULT 1,
+    notes TEXT,
+    suggested INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (stock_id) REFERENCES stock(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS shopping_list_drinks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shopping_list_id INTEGER NOT NULL,
+    drink_id INTEGER NOT NULL,
+    FOREIGN KEY (shopping_list_id) REFERENCES shopping_list(id) ON DELETE CASCADE,
+    FOREIGN KEY (drink_id) REFERENCES drinks(id) ON DELETE CASCADE,
+    UNIQUE(shopping_list_id, drink_id)
+  );
 `);
 
 // Insert default passcodes if none exist
@@ -118,6 +138,27 @@ export interface Passcode {
   id: number;
   type: "owner" | "guest";
   code: string;
+}
+
+export interface ShoppingListItem {
+  id: number;
+  ingredient_name: string;
+  stock_id: number | null;
+  quantity: number;
+  notes: string | null;
+  suggested: number;
+  created_at: string;
+}
+
+export interface ShoppingListDrink {
+  id: number;
+  shopping_list_id: number;
+  drink_id: number;
+}
+
+export interface ShoppingListDrinkInfo {
+  drink_id: number;
+  name: string;
 }
 
 // Stock queries
@@ -200,6 +241,54 @@ export const cocktailDBQueries = {
      RETURNING *`
   ),
   getCount: db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM cocktaildb_drinks"),
+  getAllExternalIds: db.query<{ external_id: string }, []>("SELECT external_id FROM cocktaildb_drinks"),
+  getUniqueIngredients: db.query<{ name: string }, []>(`
+    SELECT DISTINCT json_each.value as name
+    FROM cocktaildb_drinks, json_each(cocktaildb_drinks.ingredients_json, '$[*].name')
+    ORDER BY name
+  `),
+};
+
+// Shopping list queries
+export const shoppingQueries = {
+  getAll: db.query<ShoppingListItem, []>("SELECT * FROM shopping_list ORDER BY created_at DESC"),
+  getById: db.query<ShoppingListItem, [number]>("SELECT * FROM shopping_list WHERE id = ?"),
+  getByName: db.query<ShoppingListItem, [string]>(
+    "SELECT * FROM shopping_list WHERE LOWER(ingredient_name) = LOWER(?)"
+  ),
+  getByStockId: db.query<ShoppingListItem, [number]>(
+    "SELECT * FROM shopping_list WHERE stock_id = ?"
+  ),
+  create: db.query<ShoppingListItem, [string, number | null, number, string | null, number]>(
+    "INSERT INTO shopping_list (ingredient_name, stock_id, quantity, notes, suggested) VALUES (?, ?, ?, ?, ?) RETURNING *"
+  ),
+  update: db.query<ShoppingListItem, [string, number | null, number, string | null, number]>(
+    "UPDATE shopping_list SET ingredient_name = ?, stock_id = ?, quantity = ?, notes = ? WHERE id = ? RETURNING *"
+  ),
+  delete: db.query<null, [number]>("DELETE FROM shopping_list WHERE id = ?"),
+  deleteAll: db.query<null, []>("DELETE FROM shopping_list"),
+
+  // Junction table queries
+  getDrinksByItemId: db.query<ShoppingListDrinkInfo, [number]>(`
+    SELECT d.id as drink_id, d.name
+    FROM shopping_list_drinks sld
+    JOIN drinks d ON d.id = sld.drink_id
+    WHERE sld.shopping_list_id = ?
+  `),
+  linkDrink: db.query<ShoppingListDrink, [number, number]>(
+    "INSERT OR IGNORE INTO shopping_list_drinks (shopping_list_id, drink_id) VALUES (?, ?) RETURNING *"
+  ),
+  unlinkDrink: db.query<null, [number, number]>(
+    "DELETE FROM shopping_list_drinks WHERE shopping_list_id = ? AND drink_id = ?"
+  ),
+
+  // Low stock suggestions
+  getLowStock: db.query<Stock & { percentage: number }, []>(`
+    SELECT *, CAST(current_ml AS REAL) / total_ml * 100 as percentage
+    FROM stock
+    WHERE total_ml > 0 AND CAST(current_ml AS REAL) / total_ml <= 0.25
+    ORDER BY CAST(current_ml AS REAL) / total_ml ASC
+  `),
 };
 
 export { db };

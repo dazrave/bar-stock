@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useToast } from "../context/ToastContext";
+import { formatMeasureWithMl } from "../utils/volume";
 
 interface CocktailDBDrink {
   id: number;
@@ -69,13 +70,19 @@ export function Browse() {
   };
 
   const handleSync = async () => {
-    if (!confirm("This will fetch ~600 drinks from CocktailDB. Continue?")) return;
+    if (!confirm("This will fetch drinks from CocktailDB (skips existing). Continue?")) return;
 
     setSyncing(true);
     try {
       const res = await fetch("/api/cocktaildb/sync", { method: "POST" });
       const data = await res.json();
-      showToast(`Synced ${data.synced} drinks!`);
+      if (data.synced > 0) {
+        showToast(`Added ${data.synced} new drinks!${data.skipped > 0 ? ` (${data.skipped} already cached)` : ""}`);
+      } else if (data.skipped > 0) {
+        showToast(`All ${data.skipped} drinks already cached`);
+      } else {
+        showToast("No new drinks found");
+      }
       fetchCount();
     } catch (err) {
       showToast("Sync failed", "error");
@@ -216,7 +223,7 @@ export function Browse() {
                   }}
                 >
                   <span>{ing.name}</span>
-                  <span style={{ color: "var(--text-secondary)" }}>{ing.measure}</span>
+                  <span style={{ color: "var(--text-secondary)" }}>{formatMeasureWithMl(ing.measure)}</span>
                 </div>
               ))}
             </div>
