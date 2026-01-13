@@ -395,9 +395,11 @@ app.get("/api/cocktaildb/count", requireAuth(true), (c) => {
 // Normalize ingredient name by removing common prefixes like "Fresh", "Freshly Squeezed", measure words that leaked in, etc.
 const normalizeIngredientName = (name: string): string => {
   let normalized = name.toLowerCase().trim();
+  // Collapse multiple spaces into single space
+  normalized = normalized.replace(/\s+/g, " ");
   // Remove "freshly squeezed" or "fresh" prefix
-  normalized = normalized.replace(/^freshly\s+squeezed\s+/i, "");
-  normalized = normalized.replace(/^fresh\s+/i, "");
+  normalized = normalized.replace(/^freshly squeezed /i, "");
+  normalized = normalized.replace(/^fresh /i, "");
   // Remove "thin slices", "slices", "slice" etc.
   normalized = normalized.replace(/^(?:thin\s+)?slices?\s+(?:of\s+)?/i, "");
   // Remove measure words that might have leaked into the name (few dashes, dash, drop, splash, shot, jigger)
