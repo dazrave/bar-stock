@@ -36,10 +36,15 @@ interface StockItem {
   total_ml: number;
 }
 
+interface ShoppingItem {
+  ingredient_name: string;
+}
+
 export function Browse() {
   const [source, setSource] = useState<Source>("iba");
   const [drinks, setDrinks] = useState<Drink[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
+  const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
   const [cocktaildbCount, setCocktaildbCount] = useState(0);
   const [ibaCount, setIbaCount] = useState(0);
   const [search, setSearch] = useState("");
@@ -58,6 +63,11 @@ export function Browse() {
     fetch("/api/stock")
       .then((r) => r.json())
       .then(setStock)
+      .catch(() => {});
+    // Fetch shopping list
+    fetch("/api/shopping")
+      .then((r) => r.json())
+      .then((data) => setShoppingList(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
@@ -234,15 +244,43 @@ export function Browse() {
     });
   };
 
-  // Count how many ingredients we have vs total
-  const getIngredientCount = (drink: Drink): { have: number; total: number } => {
+  // Check if ingredient is on shopping list (fuzzy match)
+  const isOnShoppingList = (ingredientName: string): boolean => {
+    const lower = ingredientName.toLowerCase();
+    return shoppingList.some(
+      (item) =>
+        item.ingredient_name.toLowerCase() === lower ||
+        item.ingredient_name.toLowerCase().includes(lower) ||
+        lower.includes(item.ingredient_name.toLowerCase())
+    );
+  };
+
+  // Count how many ingredients we have vs total, and if missing ones are on shopping list
+  const getIngredientCount = (drink: Drink): { have: number; total: number; allMissingOnList: boolean } => {
     const ingredients = parseIngredients(drink.ingredients_json);
-    if (ingredients.length === 0) return { have: 0, total: 0 };
-    const have = ingredients.filter((ing) => {
+    if (ingredients.length === 0) return { have: 0, total: 0, allMissingOnList: false };
+
+    let have = 0;
+    let missingCount = 0;
+    let missingOnListCount = 0;
+
+    for (const ing of ingredients) {
       const stockMatch = findStockMatch(ing.name);
-      return stockMatch && stockMatch.current_ml > 0;
-    }).length;
-    return { have, total: ingredients.length };
+      if (stockMatch && stockMatch.current_ml > 0) {
+        have++;
+      } else {
+        missingCount++;
+        if (isOnShoppingList(ing.name)) {
+          missingOnListCount++;
+        }
+      }
+    }
+
+    return {
+      have,
+      total: ingredients.length,
+      allMissingOnList: missingCount > 0 && missingOnListCount === missingCount
+    };
   };
 
   // Toggle hidden status on a drink
@@ -404,7 +442,7 @@ export function Browse() {
             const canMake = canMakeDrink(drink);
             const isHidden = drink.hidden === 1;
             const isGhosted = isOwner && (!canMake || isHidden);
-            const { have, total } = getIngredientCount(drink);
+            const { have, total, allMissingOnList } = getIngredientCount(drink);
 
             return (
               <div
@@ -442,7 +480,7 @@ export function Browse() {
                 />
               )}
               <div style={{ fontWeight: 600 }}>{drink.name}</div>
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
                 {drink.category && (
                   <div className="badge">{drink.category}</div>
                 )}
@@ -450,6 +488,9 @@ export function Browse() {
                   <div
                     className="badge"
                     style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.25rem",
                       background: canMake
                         ? "rgba(34, 197, 94, 0.2)"
                         : have > 0
@@ -463,6 +504,9 @@ export function Browse() {
                     }}
                   >
                     {have}/{total}
+                    {!canMake && allMissingOnList && (
+                      <span title="Missing items on shopping list" style={{ marginLeft: "0.125rem" }}>🛒✓</span>
+                    )}
                   </div>
                 )}
               </div>

@@ -55,7 +55,7 @@ export function Stock() {
     // Fetch shopping list to show indicators
     fetch("/api/shopping")
       .then((r) => r.json())
-      .then(setShoppingList)
+      .then((data) => setShoppingList(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
