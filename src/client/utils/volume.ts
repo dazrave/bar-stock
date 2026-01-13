@@ -142,16 +142,24 @@ function parseFraction(str: string): number {
 }
 
 /**
+ * Round to nearest 10 for cleaner display
+ */
+function roundToTen(ml: number): number {
+  return Math.round(ml / 10) * 10;
+}
+
+/**
  * Format a CocktailDB measure for display, converting oz/tsp/tbsp/cl to ml
+ * Rounds to nearest 10ml for cleaner display
  * @param measure - Original measure string (e.g., "1 1/2 oz", "2 teaspoons")
- * @returns Formatted string in ml (e.g., "45ml") or original if not convertible
+ * @returns Formatted string in ml (e.g., "50ml") or original if not convertible
  */
 export function formatMeasureWithMl(measure: string): string {
   if (!measure) return "";
 
   const ml = parseOzMeasure(measure);
   if (ml !== null) {
-    return `${ml}ml`;
+    return `${roundToTen(ml)}ml`;
   }
 
   const trimmed = measure.trim().toLowerCase();
@@ -159,21 +167,21 @@ export function formatMeasureWithMl(measure: string): string {
   // Check for cl and convert (1 cl = 10ml)
   const clMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*cl$/);
   if (clMatch) {
-    return `${Math.round(parseFloat(clMatch[1]) * 10)}ml`;
+    return `${roundToTen(parseFloat(clMatch[1]) * 10)}ml`;
   }
 
   // Check for teaspoons and convert (1 tsp = 5ml)
   const tspMatch = trimmed.match(/^([\d.\/\s]+)\s*(?:tsp|teaspoons?)$/);
   if (tspMatch) {
     const tsp = parseFraction(tspMatch[1]);
-    if (tsp > 0) return `${Math.round(tsp * 5)}ml`;
+    if (tsp > 0) return `${roundToTen(tsp * 5)}ml`;
   }
 
   // Check for tablespoons and convert (1 tbsp = 15ml)
   const tbspMatch = trimmed.match(/^([\d.\/\s]+)\s*(?:tbsp|tblsp|tablespoons?)$/);
   if (tbspMatch) {
     const tbsp = parseFraction(tbspMatch[1]);
-    if (tbsp > 0) return `${Math.round(tbsp * 15)}ml`;
+    if (tbsp > 0) return `${roundToTen(tbsp * 15)}ml`;
   }
 
   return measure.trim();
