@@ -684,26 +684,32 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
     } else {
       const titleMatch = html.match(/<title>([^<|]+)/i);
       if (titleMatch) {
-        name = decodeHtmlEntities(titleMatch[1].trim().replace(/\s*[-–—]\s*IBA.*$/i, "").trim());
+        name = decodeHtmlEntities(titleMatch[1].trim());
       }
     }
+    // Clean up name - remove " – IBA", " - IBA", etc.
+    name = name.replace(/\s*[-–—]\s*IBA.*$/i, "").trim();
 
-    // Extract image URL - prefer webp images from wp-content/uploads
+    // Extract image URL - look for cocktail images (contain "iba-cocktail" in path)
     let image_url: string | null = null;
-    // First try to find webp images (preferred)
-    const webpMatch = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+\.webp)"/i);
-    if (webpMatch) {
-      image_url = webpMatch[1];
-    } else {
-      // Fallback to any wp-content/uploads image that's not logo/icon
-      const imgMatches = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+)"/gi);
-      if (imgMatches) {
-        for (const match of imgMatches) {
-          const urlMatch = match.match(/src="([^"]+)"/);
-          if (urlMatch && urlMatch[1] && !urlMatch[1].includes('logo') && !urlMatch[1].includes('icon')) {
-            image_url = urlMatch[1];
-            break;
-          }
+    // Find webp images that are actual cocktail images (not logos/thumbs)
+    const imgMatches = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+)"/gi) || [];
+    for (const match of imgMatches) {
+      const urlMatch = match.match(/src="([^"]+)"/);
+      if (urlMatch && urlMatch[1]) {
+        const imgUrl = urlMatch[1];
+        // Skip logos, icons, and elementor thumbs
+        if (imgUrl.includes('logo') || imgUrl.includes('icon') || imgUrl.includes('elementor/thumbs')) {
+          continue;
+        }
+        // Prefer images with "iba-cocktail" in the filename (actual cocktail photos)
+        if (imgUrl.includes('iba-cocktail')) {
+          image_url = imgUrl;
+          break;
+        }
+        // Otherwise use first non-logo image as fallback
+        if (!image_url) {
+          image_url = imgUrl;
         }
       }
     }
