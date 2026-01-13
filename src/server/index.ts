@@ -391,6 +391,17 @@ app.get("/api/cocktaildb/count", requireAuth(true), (c) => {
   return c.json({ count: result?.count || 0 });
 });
 
+// Helper to fuzzy match ingredient name to stock
+const findStockMatch = (ingredientName: string, stockItems: Array<{ id: number; name: string }>) => {
+  const lower = ingredientName.toLowerCase();
+  return stockItems.find(
+    (s) =>
+      s.name.toLowerCase() === lower ||
+      s.name.toLowerCase().includes(lower) ||
+      lower.includes(s.name.toLowerCase())
+  );
+};
+
 app.post("/api/cocktaildb/import/:id", requireAuth(), async (c) => {
   const id = parseInt(c.req.param("id"));
   const cocktailDBDrink = cocktailDBQueries.getById.get(id);
@@ -404,6 +415,9 @@ app.post("/api/cocktaildb/import/:id", requireAuth(), async (c) => {
     ingredients = JSON.parse(cocktailDBDrink.ingredients_json || "[]");
   } catch {}
 
+  // Get all stock items for fuzzy matching
+  const stockItems = stockQueries.getAll.all();
+
   const drink = drinkQueries.create.get(
     cocktailDBDrink.name,
     cocktailDBDrink.category || "Other",
@@ -413,9 +427,11 @@ app.post("/api/cocktaildb/import/:id", requireAuth(), async (c) => {
 
   if (drink) {
     for (const ing of ingredients) {
+      // Try to auto-link to stock
+      const stockMatch = findStockMatch(ing.name, stockItems);
       ingredientQueries.create.run(
         drink.id,
-        null,
+        stockMatch?.id || null,
         ing.name,
         null,
         ing.measure || null,
@@ -564,6 +580,9 @@ app.post("/api/iba/import/:id", requireAuth(), async (c) => {
     ingredients = JSON.parse(ibaDrink.ingredients_json || "[]");
   } catch {}
 
+  // Get all stock items for fuzzy matching
+  const stockItems = stockQueries.getAll.all();
+
   const drink = drinkQueries.create.get(
     ibaDrink.name,
     ibaDrink.category || "Cocktail",
@@ -573,9 +592,11 @@ app.post("/api/iba/import/:id", requireAuth(), async (c) => {
 
   if (drink) {
     for (const ing of ingredients) {
+      // Try to auto-link to stock
+      const stockMatch = findStockMatch(ing.name, stockItems);
       ingredientQueries.create.run(
         drink.id,
-        null,
+        stockMatch?.id || null,
         ing.name,
         null,
         ing.measure || null,
