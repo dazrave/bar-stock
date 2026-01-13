@@ -2,31 +2,45 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 
-// Convert oz measurements to ml for display
+// Parse fractional numbers like "1 1/2" or "1/2"
+const parseFraction = (str: string): number => {
+  let total = 0;
+  const parts = str.trim().split(/\s+/);
+  for (const part of parts) {
+    if (part.includes("/")) {
+      const [num, denom] = part.split("/").map(Number);
+      total += num / denom;
+    } else {
+      total += parseFloat(part) || 0;
+    }
+  }
+  return total;
+};
+
+// Convert oz/tbsp measurements to ml for display
 const formatAmount = (amountText: string | null, amountMl: number | null): string => {
   if (amountMl) return `${amountMl}ml`;
   if (!amountText) return "";
 
-  // Convert common oz patterns to ml (1 oz ≈ 30ml)
+  // Convert oz to ml (1 oz ≈ 30ml)
   const ozMatch = amountText.match(/^([\d.\/\s]+)\s*oz$/i);
   if (ozMatch) {
-    const ozStr = ozMatch[1].trim();
-    let oz = 0;
+    const oz = parseFraction(ozMatch[1]);
+    if (oz > 0) return `${Math.round(oz * 30)}ml`;
+  }
 
-    // Handle fractions like "1 1/2" or "1/2"
-    const parts = ozStr.split(/\s+/);
-    for (const part of parts) {
-      if (part.includes("/")) {
-        const [num, denom] = part.split("/").map(Number);
-        oz += num / denom;
-      } else {
-        oz += parseFloat(part) || 0;
-      }
-    }
+  // Convert tablespoons to ml (1 tbsp ≈ 15ml)
+  const tbspMatch = amountText.match(/^([\d.\/\s]+)\s*(?:tbsp|tblsp|tablespoons?)$/i);
+  if (tbspMatch) {
+    const tbsp = parseFraction(tbspMatch[1]);
+    if (tbsp > 0) return `${Math.round(tbsp * 15)}ml`;
+  }
 
-    if (oz > 0) {
-      return `${Math.round(oz * 30)}ml`;
-    }
+  // Convert teaspoons to ml (1 tsp ≈ 5ml)
+  const tspMatch = amountText.match(/^([\d.\/\s]+)\s*(?:tsp|teaspoons?)$/i);
+  if (tspMatch) {
+    const tsp = parseFraction(tspMatch[1]);
+    if (tsp > 0) return `${Math.round(tsp * 5)}ml`;
   }
 
   return amountText;
