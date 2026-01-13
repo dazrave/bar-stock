@@ -254,6 +254,8 @@ export function Browse() {
     normalized = normalized.replace(/^(?:thin\s+)?slices?\s+(?:of\s+)?/i, "");
     // Remove measure words that might have leaked into the name (few dashes, dash, drop, splash, shot, jigger)
     normalized = normalized.replace(/^(?:few\s+)?(?:dash(?:es)?|drop(?:s)?|splash(?:es)?|shot(?:s)?|jigger(?:s)?)\s+(?:of\s+)?/i, "");
+    // Remove "top with", "top up with", "top up"
+    normalized = normalized.replace(/^top(?:\s*up)?(?:\s*with)?\s+/i, "");
     return normalized.trim();
   };
 
