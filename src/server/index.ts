@@ -371,6 +371,7 @@ import homepage from "../client/index.html";
 
 const server = Bun.serve({
   port,
+  hostname: "0.0.0.0",
   async fetch(req) {
     const url = new URL(req.url);
 
