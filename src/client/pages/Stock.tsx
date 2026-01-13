@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bottle } from "../components/Bottle";
+import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { parseVolume, formatVolume } from "../utils/volume";
 import { suggestCategory, STOCK_CATEGORIES } from "../utils/categoryMapping";
@@ -32,6 +33,8 @@ export function Stock() {
   const [quickEditValue, setQuickEditValue] = useState("");
   const [ingredientSuggestions, setIngredientSuggestions] = useState<string[]>([]);
   const { showToast } = useToast();
+  const { session } = useAuth();
+  const isOwner = session?.type === "owner";
 
   // Form state - using strings to allow flexible input
   const [formData, setFormData] = useState({
@@ -288,15 +291,17 @@ export function Stock() {
   // Render a compact stock item
   const renderStockItem = (item: StockItem) => {
     const inShoppingList = isInShoppingList(item);
+    const percent = Math.round((item.current_ml / item.total_ml) * 100);
+
     return (
-    <div key={item.id} className="stock-row">
+    <div key={item.id} className={`stock-row ${!isOwner ? "stock-row-guest" : ""}`}>
       <div className="stock-row-main">
         <Bottle currentMl={item.current_ml} totalMl={item.total_ml} size="xs" />
         <div className="stock-row-info">
           <span className="stock-row-name">
             {item.name}
             <span className="badge" style={{ marginLeft: "0.5rem", fontSize: "0.625rem", padding: "0.125rem 0.375rem" }}>{item.category}</span>
-            {inShoppingList && <span style={{ marginLeft: "0.5rem", color: "var(--warning)" }}>🛒</span>}
+            {isOwner && inShoppingList && <span style={{ marginLeft: "0.5rem", color: "var(--warning)" }}>🛒</span>}
           </span>
           <span className="stock-row-volume">
             {item.unit_type === "count"
@@ -304,43 +309,51 @@ export function Stock() {
               : `${formatVolume(item.current_ml)}/${formatVolume(item.total_ml)}`}
           </span>
         </div>
-        {quickEditId === item.id ? (
-          <input
-            className="input stock-row-quick-input"
-            value={quickEditValue}
-            onChange={(e) => setQuickEditValue(e.target.value)}
-            onBlur={() => handleQuickEditSave(item)}
-            onKeyDown={(e) => e.key === "Enter" && handleQuickEditSave(item)}
-            autoFocus
-            placeholder={item.unit_type === "count" ? "5" : "50%"}
-          />
+        {isOwner ? (
+          quickEditId === item.id ? (
+            <input
+              className="input stock-row-quick-input"
+              value={quickEditValue}
+              onChange={(e) => setQuickEditValue(e.target.value)}
+              onBlur={() => handleQuickEditSave(item)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickEditSave(item)}
+              autoFocus
+              placeholder={item.unit_type === "count" ? "5" : "50%"}
+            />
+          ) : (
+            <div
+              className="stock-row-percent"
+              onClick={() => handleQuickEdit(item)}
+              title={item.unit_type === "count" ? "Tap to edit" : "Tap to edit (50%, 350ml)"}
+            >
+              {item.unit_type === "count"
+                ? item.current_ml
+                : `${percent}%`}
+            </div>
+          )
         ) : (
-          <div
-            className="stock-row-percent"
-            onClick={() => handleQuickEdit(item)}
-            title={item.unit_type === "count" ? "Tap to edit" : "Tap to edit (50%, 350ml)"}
-          >
-            {item.unit_type === "count"
-              ? item.current_ml
-              : `${Math.round((item.current_ml / item.total_ml) * 100)}%`}
+          <div className="stock-row-percent" style={{ cursor: "default" }}>
+            {item.unit_type === "count" ? item.current_ml : `${percent}%`}
           </div>
         )}
       </div>
-      <div className="stock-row-controls">
-        <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>−</button>
-        <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>+</button>
-        <button
-          className={`btn btn-xs ${inShoppingList ? "btn-success" : "btn-secondary"}`}
-          onClick={() => !inShoppingList && handleAddToShopping(item)}
-          disabled={inShoppingList}
-          title={inShoppingList ? "Already in shopping list" : "Add to shopping list"}
-        >
-          🛒
-        </button>
-        <button className="btn btn-secondary btn-xs" onClick={() => handleRefill(item)}>Refill</button>
-        <button className="btn btn-secondary btn-xs" onClick={() => handleEdit(item)}>Edit</button>
-        <button className="btn btn-danger btn-xs" onClick={() => handleDelete(item.id)}>✕</button>
-      </div>
+      {isOwner && (
+        <div className="stock-row-controls">
+          <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>−</button>
+          <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>+</button>
+          <button
+            className={`btn btn-xs ${inShoppingList ? "btn-success" : "btn-secondary"}`}
+            onClick={() => !inShoppingList && handleAddToShopping(item)}
+            disabled={inShoppingList}
+            title={inShoppingList ? "Already in shopping list" : "Add to shopping list"}
+          >
+            🛒
+          </button>
+          <button className="btn btn-secondary btn-xs" onClick={() => handleRefill(item)}>Refill</button>
+          <button className="btn btn-secondary btn-xs" onClick={() => handleEdit(item)}>Edit</button>
+          <button className="btn btn-danger btn-xs" onClick={() => handleDelete(item.id)}>✕</button>
+        </div>
+      )}
     </div>
   );
   };
@@ -357,14 +370,16 @@ export function Stock() {
     <div className="page">
       <div className="header">
         <h1>Stock</h1>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button className="btn btn-secondary" onClick={() => navigate("/shopping")}>
-            🛒 Shop {shoppingList.length > 0 && `(${shoppingList.length})`}
-          </button>
-          <button className="btn btn-primary" onClick={handleAdd}>
-            + Add
-          </button>
-        </div>
+        {isOwner && (
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button className="btn btn-secondary" onClick={() => navigate("/shopping")}>
+              🛒 Shop {shoppingList.length > 0 && `(${shoppingList.length})`}
+            </button>
+            <button className="btn btn-primary" onClick={handleAdd}>
+              + Add
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="tabs">
