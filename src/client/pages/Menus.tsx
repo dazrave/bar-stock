@@ -344,8 +344,8 @@ export function Menus() {
 
       {/* Create/Edit Menu Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onMouseDown={() => setShowModal(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="modal-title">{editingMenu ? "Edit Menu" : "Create Menu"}</h2>
 
             <div className="form-group">
@@ -383,8 +383,8 @@ export function Menus() {
 
       {/* Add Drinks Modal */}
       {showAddDrinksModal && selectedMenu && (
-        <div className="modal-overlay" onClick={() => setShowAddDrinksModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
+        <div className="modal-overlay" onMouseDown={() => setShowAddDrinksModal(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
             <h2 className="modal-title">Add Drinks to {selectedMenu.name}</h2>
 
             {getAvailableDrinks().length === 0 ? (

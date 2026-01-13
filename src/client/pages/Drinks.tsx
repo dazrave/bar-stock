@@ -408,8 +408,8 @@ export function Drinks() {
       )}
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
+        <div className="modal-overlay" onMouseDown={() => setShowModal(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
             <h2 className="modal-title">{editingDrink ? "Edit Drink" : "Add Drink"}</h2>
 
             <div className="form-group">

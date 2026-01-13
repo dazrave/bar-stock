@@ -439,8 +439,8 @@ export function Stock() {
       )}
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onMouseDown={() => setShowModal(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="modal-title">{editingItem ? "Edit Stock" : "Add Stock"}</h2>
 
             <div className="form-group">

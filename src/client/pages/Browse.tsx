@@ -386,8 +386,8 @@ export function Browse() {
       )}
 
       {selectedDrink && (
-        <div className="modal-overlay" onClick={() => setSelectedDrink(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onMouseDown={() => setSelectedDrink(null)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             {selectedDrink.image_url && (
               <img
                 src={selectedDrink.image_url}

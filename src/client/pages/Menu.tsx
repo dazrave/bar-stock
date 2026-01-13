@@ -270,8 +270,8 @@ export function Menu() {
 
       {/* Drink Detail Modal */}
       {selectedDrink && !showRequestModal && (
-        <div className="modal-overlay" onClick={() => setSelectedDrink(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onMouseDown={() => setSelectedDrink(null)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             {selectedDrink.image_path && (
               <img
                 src={selectedDrink.image_path}
@@ -326,8 +326,8 @@ export function Menu() {
 
       {/* Request Name Modal */}
       {showRequestModal && selectedDrink && (
-        <div className="modal-overlay" onClick={() => setShowRequestModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onMouseDown={() => setShowRequestModal(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="modal-title">Request {selectedDrink.name}</h2>
             <p style={{ color: "var(--text-secondary)", marginBottom: "1rem" }}>
               Enter your name so we know who to call when it's ready!

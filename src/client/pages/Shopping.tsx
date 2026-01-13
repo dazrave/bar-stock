@@ -422,8 +422,8 @@ export function Shopping() {
 
       {/* Add Item Modal */}
       {showAddModal && (
-        <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onMouseDown={() => setShowAddModal(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="modal-title">Add to Shopping List</h2>
             <div className="form-group">
               <label className="label">Item Name</label>
@@ -454,8 +454,8 @@ export function Shopping() {
 
       {/* Bottle Size Modal */}
       {bottleSizeItem && (
-        <div className="modal-overlay" onClick={() => setBottleSizeItem(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onMouseDown={() => setBottleSizeItem(null)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <h2 className="modal-title">Add to Stock</h2>
             <p style={{ marginBottom: "1rem", color: "var(--text-secondary)" }}>
               Adding: <strong>{bottleSizeItem.ingredient_name}</strong>
