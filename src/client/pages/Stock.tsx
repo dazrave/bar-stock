@@ -427,10 +427,18 @@ export function Stock() {
       {filteredStock.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">🍾</div>
-          <p>No stock items yet</p>
-          <button className="btn btn-primary" onClick={handleAdd} style={{ marginTop: "1rem" }}>
-            Add your first bottle
-          </button>
+          {stock.length === 0 ? (
+            <>
+              <p>{isOwner ? "No stock items yet" : "The shelf is empty"}</p>
+              {isOwner && (
+                <button className="btn btn-primary" onClick={handleAdd} style={{ marginTop: "1rem" }}>
+                  Add your first bottle
+                </button>
+              )}
+            </>
+          ) : (
+            <p>No items match your search</p>
+          )}
         </div>
       ) : (
         <div className="stock-list">
