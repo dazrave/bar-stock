@@ -373,13 +373,14 @@ export function Browse() {
   };
 
   // Count how many ingredients we have vs total, and if missing ones are on shopping list
-  const getIngredientCount = (drink: Drink): { have: number; total: number; allMissingOnList: boolean } => {
+  const getIngredientCount = (drink: Drink): { have: number; total: number; allMissingOnList: boolean; missingNames: string[] } => {
     const ingredients = parseIngredients(drink.ingredients_json);
-    if (ingredients.length === 0) return { have: 0, total: 0, allMissingOnList: false };
+    if (ingredients.length === 0) return { have: 0, total: 0, allMissingOnList: false, missingNames: [] };
 
     let have = 0;
     let missingCount = 0;
     let missingOnListCount = 0;
+    const missingNames: string[] = [];
 
     for (const ing of ingredients) {
       // Check for swap first, then fuzzy match
@@ -388,6 +389,7 @@ export function Browse() {
         have++;
       } else {
         missingCount++;
+        missingNames.push(ing.name);
         if (isOnShoppingList(ing.name)) {
           missingOnListCount++;
         }
@@ -397,7 +399,8 @@ export function Browse() {
     return {
       have,
       total: ingredients.length,
-      allMissingOnList: missingCount > 0 && missingOnListCount === missingCount
+      allMissingOnList: missingCount > 0 && missingOnListCount === missingCount,
+      missingNames
     };
   };
 
@@ -586,7 +589,7 @@ export function Browse() {
           {filteredDrinks.map((drink) => {
             const canMake = canMakeDrink(drink);
             const isHidden = drink.hidden === 1;
-            const { have, total, allMissingOnList } = getIngredientCount(drink);
+            const { have, total, allMissingOnList, missingNames } = getIngredientCount(drink);
             // Not ghosted if can make OR if all missing items are on shopping list
             const isGhosted = isOwner && (!canMake && !allMissingOnList || isHidden);
 
@@ -656,6 +659,18 @@ export function Browse() {
                   </div>
                 )}
               </div>
+              {missingNames.length > 0 && (
+                <div
+                  style={{
+                    fontSize: "0.6875rem",
+                    color: "var(--text-secondary)",
+                    marginTop: "0.375rem",
+                    lineHeight: 1.3,
+                  }}
+                >
+                  Missing: {missingNames.join(", ")}
+                </div>
+              )}
             </div>
           );
         })}
