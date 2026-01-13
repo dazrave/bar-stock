@@ -570,8 +570,9 @@ export function Browse() {
           {filteredDrinks.map((drink) => {
             const canMake = canMakeDrink(drink);
             const isHidden = drink.hidden === 1;
-            const isGhosted = isOwner && (!canMake || isHidden);
             const { have, total, allMissingOnList } = getIngredientCount(drink);
+            // Not ghosted if can make OR if all missing items are on shopping list
+            const isGhosted = isOwner && (!canMake && !allMissingOnList || isHidden);
 
             return (
               <div
