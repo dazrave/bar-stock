@@ -226,6 +226,25 @@ export function Menu() {
         </div>
       )}
 
+      {/* Menu description for guests */}
+      {filterType === "menu" && filterValue !== "all" && (() => {
+        const selectedMenuDesc = menus.find(m => m.name === filterValue);
+        return selectedMenuDesc?.description ? (
+          <p style={{
+            fontSize: "0.875rem",
+            fontStyle: "italic",
+            color: "var(--text-secondary)",
+            marginBottom: "1rem",
+            lineHeight: 1.5,
+            padding: "0.75rem",
+            background: "var(--bg-card)",
+            borderRadius: "0.5rem",
+          }}>
+            {selectedMenuDesc.description}
+          </p>
+        ) : null;
+      })()}
+
       {allVisibleDrinks.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>
