@@ -400,8 +400,8 @@ const normalizeIngredientName = (name: string): string => {
   normalized = normalized.replace(/^fresh\s+/i, "");
   // Remove "thin slices", "slices", "slice" etc.
   normalized = normalized.replace(/^(?:thin\s+)?slices?\s+(?:of\s+)?/i, "");
-  // Remove measure words that might have leaked into the name (dash, drop, splash, shot, jigger)
-  normalized = normalized.replace(/^(?:dash(?:es)?|drop(?:s)?|splash(?:es)?|shot(?:s)?|jigger(?:s)?)\s+(?:of\s+)?/i, "");
+  // Remove measure words that might have leaked into the name (few dashes, dash, drop, splash, shot, jigger)
+  normalized = normalized.replace(/^(?:few\s+)?(?:dash(?:es)?|drop(?:s)?|splash(?:es)?|shot(?:s)?|jigger(?:s)?)\s+(?:of\s+)?/i, "");
   return normalized.trim();
 };
 
@@ -866,8 +866,8 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
         // Decode any HTML entities
         const decodedText = decodeHtmlEntities(text);
 
-        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Tablespoon Absinthe", "Top up with Ginger beer", "Bar Spoon Maraschino"
-        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?)?|(?:bar\s*spoon)|top\s*up(?:\s*with)?)\s+(.+)$/i);
+        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "Few Dashes Bitters", "Top up with Ginger beer", "Bar Spoon Maraschino"
+        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?)?|(?:bar\s*spoon)|(?:few\s+dashes?)|(?:few\s+drops?)|top\s*up(?:\s*with)?)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({
             measure: measureMatch[1].trim(),

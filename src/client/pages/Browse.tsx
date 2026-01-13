@@ -252,8 +252,8 @@ export function Browse() {
     normalized = normalized.replace(/^fresh\s+/i, "");
     // Remove "thin slices", "slices", "slice" etc.
     normalized = normalized.replace(/^(?:thin\s+)?slices?\s+(?:of\s+)?/i, "");
-    // Remove measure words that might have leaked into the name (dash, drop, splash, shot, jigger)
-    normalized = normalized.replace(/^(?:dash(?:es)?|drop(?:s)?|splash(?:es)?|shot(?:s)?|jigger(?:s)?)\s+(?:of\s+)?/i, "");
+    // Remove measure words that might have leaked into the name (few dashes, dash, drop, splash, shot, jigger)
+    normalized = normalized.replace(/^(?:few\s+)?(?:dash(?:es)?|drop(?:s)?|splash(?:es)?|shot(?:s)?|jigger(?:s)?)\s+(?:of\s+)?/i, "");
     return normalized.trim();
   };
 
@@ -389,9 +389,12 @@ export function Browse() {
         have++;
       } else {
         missingCount++;
-        missingNames.push(ing.name);
-        if (isOnShoppingList(ing.name)) {
+        const onList = isOnShoppingList(ing.name);
+        if (onList) {
           missingOnListCount++;
+        } else {
+          // Only add to missingNames if NOT on shopping list
+          missingNames.push(ing.name);
         }
       }
     }
