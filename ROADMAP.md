@@ -99,10 +99,12 @@ CREATE TABLE menu_drinks (
 - [ ] Guest sees "Requested!" confirmation
 
 #### Owner Queue View
-- [ ] New nav item or notification badge for pending requests
+- [ ] Nav item with badge count for pending requests
 - [ ] Queue shows: Guest Name | Drink | Time requested
-- [ ] Actions: "Making" (in progress) | "Done" (removes from queue, increments counter, deducts stock)
+- [ ] Actions: "Making" (in progress) | "Done" (auto-deducts stock, increments counter)
 - [ ] Optional: "Decline" with reason
+- [ ] **Queue toggle**: "Taking Orders" / "Bar Closed" switch
+  - When closed: Guests see "Bar is closed" message, can't request
 
 #### Database
 ```sql
@@ -254,11 +256,16 @@ CREATE TABLE drink_requests (
 | Misc ingredients | Simple count ("3 lemons"), NOT preventative for "can make" |
 | Guest view | Menu + available drinks + request system |
 | Drink requests | Prompt guest for their name when requesting |
+| Stock deduction | Always automatic when marking drink "Done" |
+| Queue notifications | Badge count on nav item only (no sounds/popups) |
+| Queue control | Toggle: "Taking Orders" / "Bar Closed" |
+| Import policy | Allow all imports, hide unmakeable from guests |
 
 ### Pain Points Identified
 1. **Auto-fill category when adding stock** - e.g., typing "Prosecco" should auto-suggest "Wine" category
 2. **Category counts on filter tabs** - Show count badge next to each category (e.g., "Wine (3)")
-3. **BUG: Can add drinks to menu without stock** - Should prevent/warn when importing drinks you can't make
+3. **BUG: Can add drinks to menu without stock** - Should hide from guests, show warning for owner
+4. **BUG: IBA sync broken** - Images blocked, ingredients and instructions not being scraped (regex patterns need fixing)
 
 ---
 
@@ -278,9 +285,10 @@ These are small improvements that can be done quickly:
 ### Browse Page
 - [ ] Show "Already imported" badge if drink exists in My Drinks
 - [ ] Batch import multiple drinks at once
-- [ ] **Import warning**: When adding drink you can't make, show:
-  - "Missing ingredients: Campari, Sweet Vermouth"
-  - Option: "Import anyway" or "Add missing to shopping list & import"
+- [ ] **Import behavior** (decided):
+  - Allow importing ANY drink (no blocking)
+  - Drinks you can't make: hidden from guests, warning badge for owner
+  - Missing ingredients shown on drink detail
 
 ### Drinks Page
 - [ ] Sort by: Name, Times Made, Recently Added
@@ -290,6 +298,25 @@ These are small improvements that can be done quickly:
 - [ ] Confirmation before destructive actions (delete)
 - [ ] Undo for recent actions (toast with "Undo" button)
 - [ ] Keyboard shortcut: "/" to focus search
+
+---
+
+## Known Bugs (To Fix)
+
+### HIGH PRIORITY
+1. **IBA Scraper Broken**
+   - Images not loading (possible hotlink protection)
+   - Ingredients not being parsed
+   - Instructions/method not being extracted
+   - **Fix**: Investigate HTML structure, may need different parsing approach or use their API if available
+
+2. **Drinks Page Shows Unmakeable**
+   - Imported drinks show even without ingredients
+   - Should be hidden from guests, ghosted for owner
+
+### MEDIUM PRIORITY
+3. **No feedback when sync fails**
+   - If IBA sync has errors, user doesn't see details
 
 ---
 
