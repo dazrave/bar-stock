@@ -370,6 +370,11 @@ app.put("/api/settings/passcode", requireAuth(), async (c) => {
 
 // ============ COCKTAILDB ROUTES ============
 
+app.get("/api/cocktaildb/all", requireAuth(true), (c) => {
+  const drinks = cocktailDBQueries.getAll.all();
+  return c.json(drinks);
+});
+
 app.get("/api/cocktaildb/search", requireAuth(true), (c) => {
   const q = c.req.query("q") || "";
   const drinks = cocktailDBQueries.search.all(`%${q}%`);
@@ -505,6 +510,11 @@ app.post("/api/cocktaildb/:id/toggle-hidden", requireAuth(), (c) => {
 });
 
 // ============ IBA COCKTAIL ROUTES ============
+
+app.get("/api/iba/all", requireAuth(true), (c) => {
+  const drinks = ibaQueries.getAll.all();
+  return c.json(drinks);
+});
 
 app.get("/api/iba/search", requireAuth(true), (c) => {
   const q = c.req.query("q") || "";

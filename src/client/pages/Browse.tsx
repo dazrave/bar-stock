@@ -116,6 +116,21 @@ export function Browse() {
     }
   };
 
+  const handleShowAll = async () => {
+    setLoading(true);
+    setSearch("");
+    try {
+      const endpoint = source === "iba" ? "/api/iba/all" : "/api/cocktaildb/all";
+      const res = await fetch(endpoint);
+      const data = await res.json();
+      setDrinks(data);
+    } catch (err) {
+      showToast("Failed to load drinks", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSync = async () => {
     const sourceName = source === "iba" ? "IBA World" : "CocktailDB";
     if (!confirm(`This will fetch drinks from ${sourceName} (skips existing). Continue?`)) return;
@@ -296,6 +311,14 @@ export function Browse() {
       </div>
 
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+        <button
+          className="btn btn-secondary"
+          style={{ flex: 1 }}
+          onClick={handleShowAll}
+          disabled={loading || currentCount === 0}
+        >
+          📋 Show All
+        </button>
         <button
           className="btn btn-secondary"
           style={{ flex: 1 }}
