@@ -125,16 +125,23 @@ export function mlToOz(ml: number): number {
 }
 
 /**
- * Format a CocktailDB measure for display, adding ml equivalent if it's in oz
+ * Format a CocktailDB measure for display, converting oz to ml
  * @param measure - Original measure string (e.g., "1 1/2 oz")
- * @returns Formatted string with ml equivalent (e.g., "1 1/2 oz (45ml)")
+ * @returns Formatted string in ml (e.g., "45ml") or original if not oz
  */
 export function formatMeasureWithMl(measure: string): string {
   if (!measure) return "";
 
   const ml = parseOzMeasure(measure);
   if (ml !== null) {
-    return `${measure.trim()} (${ml}ml)`;
+    return `${ml}ml`;
+  }
+
+  // Check for cl and convert
+  const trimmed = measure.trim().toLowerCase();
+  const clMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*cl$/);
+  if (clMatch) {
+    return `${Math.round(parseFloat(clMatch[1]) * 10)}ml`;
   }
 
   return measure.trim();
