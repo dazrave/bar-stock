@@ -4,6 +4,12 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { formatVolume } from "../utils/volume";
 
+interface MenuIngredient {
+  name: string;
+  amount: string | null;
+  optional: boolean;
+}
+
 interface MenuDrink {
   id: number;
   name: string;
@@ -15,6 +21,7 @@ interface MenuDrink {
   menu_hidden: number;
   canMake: boolean;
   servingsLeft: number;
+  ingredients: MenuIngredient[];
 }
 
 interface Menu {
@@ -34,6 +41,8 @@ export function Menu() {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [barOpen, setBarOpen] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
+  const [filterType, setFilterType] = useState<"all" | "menu" | "category">("all");
+  const [filterValue, setFilterValue] = useState<string>("all");
   const { logout, session } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -111,6 +120,37 @@ export function Menu() {
     return drinks.filter((d) => d.canMake && d.menu_hidden === 0);
   };
 
+  // Get all visible drinks across all menus (deduped by drink id)
+  const allVisibleDrinks = (() => {
+    const seen = new Set<number>();
+    const drinks: MenuDrink[] = [];
+    for (const menu of menus.filter(m => isOwner || m.active === 1)) {
+      for (const drink of getVisibleDrinks(menu.drinks)) {
+        if (!seen.has(drink.id)) {
+          seen.add(drink.id);
+          drinks.push(drink);
+        }
+      }
+    }
+    return drinks;
+  })();
+
+  // Get unique categories from visible drinks
+  const categories = [...new Set(allVisibleDrinks.map(d => d.category))].sort();
+
+  // Get visible menu names
+  const menuNames = menus.filter(m => isOwner || m.active === 1).map(m => m.name);
+
+  // Filter drinks based on current filter
+  const filteredDrinks = filterValue === "all"
+    ? allVisibleDrinks
+    : filterType === "menu"
+      ? allVisibleDrinks.filter(d => {
+          const menu = menus.find(m => m.name === filterValue);
+          return menu?.drinks.some(md => md.id === d.id);
+        })
+      : allVisibleDrinks.filter(d => d.category === filterValue);
+
   if (loading) {
     return (
       <div className="page" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -159,10 +199,53 @@ export function Menu() {
         </div>
       )}
 
-      {visibleMenus.length === 0 ? (
+      {/* Filter tabs */}
+      <div className="tabs" style={{ marginBottom: "1rem" }}>
+        <button
+          className={`tab ${filterValue === "all" ? "active" : ""}`}
+          onClick={() => { setFilterType("all"); setFilterValue("all"); }}
+        >
+          All
+          <span className="tab-count">{allVisibleDrinks.length}</span>
+        </button>
+        {menuNames.map(name => (
+          <button
+            key={name}
+            className={`tab ${filterType === "menu" && filterValue === name ? "active" : ""}`}
+            onClick={() => { setFilterType("menu"); setFilterValue(name); }}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+
+      {/* Category filter (secondary) */}
+      {categories.length > 1 && (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+          {categories.map(cat => (
+            <button
+              key={cat}
+              className={`btn btn-sm ${filterType === "category" && filterValue === cat ? "btn-primary" : "btn-secondary"}`}
+              onClick={() => {
+                if (filterType === "category" && filterValue === cat) {
+                  setFilterType("all");
+                  setFilterValue("all");
+                } else {
+                  setFilterType("category");
+                  setFilterValue(cat);
+                }
+              }}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {allVisibleDrinks.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>
-          <p>No menus available</p>
+          <p>No drinks available</p>
           {isOwner && (
             <button
               className="btn btn-primary"
@@ -173,99 +256,75 @@ export function Menu() {
             </button>
           )}
         </div>
+      ) : filteredDrinks.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">🔍</div>
+          <p>No drinks match this filter</p>
+        </div>
       ) : (
-        visibleMenus.map((menu) => {
-          const visibleDrinks = getVisibleDrinks(menu.drinks);
+        <div className="grid grid-2">
+          {filteredDrinks.map((drink) => {
+            const isGhosted = isOwner && (!drink.canMake || drink.menu_hidden === 1);
+            const showLowWarning = drink.canMake && drink.servingsLeft <= 3;
 
-          if (!isOwner && visibleDrinks.length === 0) return null;
-
-          return (
-            <div key={menu.id} style={{ marginBottom: "2rem" }}>
-              <div style={{ marginBottom: "1rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: 0 }}>{menu.name}</h2>
-                  {isOwner && menu.active === 0 && (
-                    <span className="badge" style={{ background: "rgba(239, 68, 68, 0.2)", color: "var(--danger)" }}>
-                      Hidden
-                    </span>
+            return (
+              <div
+                key={drink.id}
+                className="card"
+                onClick={() => {
+                  setSelectedDrink(drink);
+                  // Find which menu this drink belongs to
+                  const menu = menus.find(m => m.drinks.some(d => d.id === drink.id));
+                  setSelectedMenu(menu || null);
+                }}
+                style={{
+                  cursor: "pointer",
+                  opacity: isGhosted ? 0.5 : 1,
+                  position: "relative",
+                }}
+              >
+                {isOwner && drink.menu_hidden === 1 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "0.5rem",
+                      right: "0.5rem",
+                      fontSize: "1rem",
+                    }}
+                  >
+                    👁️‍🗨️
+                  </div>
+                )}
+                {drink.image_path && (
+                  <img
+                    src={drink.image_path}
+                    alt={drink.name}
+                    className="drink-image"
+                    style={{
+                      marginBottom: "0.75rem",
+                      filter: isGhosted ? "grayscale(70%)" : "none",
+                    }}
+                  />
+                )}
+                <div style={{ fontWeight: 600 }}>{drink.name}</div>
+                <div className="badge" style={{ marginTop: "0.25rem" }}>{drink.category}</div>
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                  {drink.canMake ? (
+                    showLowWarning ? (
+                      <span className="badge badge-warning">
+                        {drink.servingsLeft === 1 ? "Last one!" : `Only ${drink.servingsLeft} left!`}
+                      </span>
+                    ) : (
+                      <span className="badge badge-success">Available</span>
+                    )
+                  ) : (
+                    <span className="badge badge-danger">Unavailable</span>
                   )}
                 </div>
-                {menu.description && (
-                  <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                    {menu.description}
-                  </p>
-                )}
               </div>
-
-              {visibleDrinks.length === 0 ? (
-                <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-                  No drinks available in this menu
-                </p>
-              ) : (
-                <div className="grid grid-2">
-                  {visibleDrinks.map((drink) => {
-                    const isGhosted = isOwner && (!drink.canMake || drink.menu_hidden === 1);
-                    const showLowWarning = drink.canMake && drink.servingsLeft <= 3;
-
-                    return (
-                      <div
-                        key={drink.id}
-                        className="card"
-                        onClick={() => {
-                          setSelectedDrink(drink);
-                          setSelectedMenu(menu);
-                        }}
-                        style={{
-                          cursor: "pointer",
-                          opacity: isGhosted ? 0.5 : 1,
-                          position: "relative",
-                        }}
-                      >
-                        {isOwner && drink.menu_hidden === 1 && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              top: "0.5rem",
-                              right: "0.5rem",
-                              fontSize: "1rem",
-                            }}
-                          >
-                            👁️‍🗨️
-                          </div>
-                        )}
-                        {drink.image_path && (
-                          <img
-                            src={drink.image_path}
-                            alt={drink.name}
-                            className="drink-image"
-                            style={{
-                              marginBottom: "0.75rem",
-                              filter: isGhosted ? "grayscale(70%)" : "none",
-                            }}
-                          />
-                        )}
-                        <div style={{ fontWeight: 600 }}>{drink.name}</div>
-                        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-                          {drink.canMake ? (
-                            showLowWarning ? (
-                              <span className="badge badge-warning">
-                                {drink.servingsLeft === 1 ? "Last one!" : `Only ${drink.servingsLeft} left!`}
-                              </span>
-                            ) : (
-                              <span className="badge badge-success">Available</span>
-                            )
-                          ) : (
-                            <span className="badge badge-danger">Unavailable</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })
+            );
+          })}
+        </div>
       )}
 
       {/* Drink Detail Modal */}
@@ -292,6 +351,29 @@ export function Menu() {
                 <div className="badge badge-success">Made {selectedDrink.times_made}x</div>
               )}
             </div>
+
+            {selectedDrink.ingredients && selectedDrink.ingredients.length > 0 && (
+              <div style={{ marginTop: "1.5rem" }}>
+                <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+                  INGREDIENTS
+                </h3>
+                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                  {selectedDrink.ingredients.map((ing, idx) => (
+                    <li key={idx} style={{
+                      padding: "0.375rem 0",
+                      borderBottom: idx < selectedDrink.ingredients.length - 1 ? "1px solid var(--border)" : "none",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      opacity: ing.optional ? 0.7 : 1,
+                    }}>
+                      <span>{ing.name}{ing.optional && " (optional)"}</span>
+                      {ing.amount && <span style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>{ing.amount}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {selectedDrink.instructions && (
               <div style={{ marginTop: "1.5rem" }}>

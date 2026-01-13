@@ -939,6 +939,11 @@ app.get("/api/menus", requireAuth(true), (c) => {
         ...drink,
         canMake,
         servingsLeft: canMake ? (minServings === Infinity ? 99 : minServings) : 0,
+        ingredients: ingredients.map((ing) => ({
+          name: ing.ingredient_name,
+          amount: ing.amount_text || (ing.amount_ml ? `${ing.amount_ml}ml` : null),
+          optional: ing.optional === 1,
+        })),
       };
     });
 
