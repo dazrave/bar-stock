@@ -690,26 +690,25 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
     // Clean up name - remove " – IBA", " - IBA", etc.
     name = name.replace(/\s*[-–—]\s*IBA.*$/i, "").trim();
 
-    // Extract image URL - look for cocktail images (contain "iba-cocktail" in path)
+    // Extract image URL - find image with cocktail name/slug in the path
     let image_url: string | null = null;
-    // Find webp images that are actual cocktail images (not logos/thumbs)
     const imgMatches = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+)"/gi) || [];
     for (const match of imgMatches) {
       const urlMatch = match.match(/src="([^"]+)"/);
       if (urlMatch && urlMatch[1]) {
-        const imgUrl = urlMatch[1];
+        const imgUrl = urlMatch[1].toLowerCase();
         // Skip logos, icons, and elementor thumbs
         if (imgUrl.includes('logo') || imgUrl.includes('icon') || imgUrl.includes('elementor/thumbs')) {
           continue;
         }
-        // Prefer images with "iba-cocktail" in the filename (actual cocktail photos)
-        if (imgUrl.includes('iba-cocktail')) {
-          image_url = imgUrl;
+        // Best match: image URL contains the cocktail slug (e.g., "margarita", "sex-on-the-beach")
+        if (imgUrl.includes(slug.toLowerCase())) {
+          image_url = urlMatch[1];
           break;
         }
-        // Otherwise use first non-logo image as fallback
-        if (!image_url) {
-          image_url = imgUrl;
+        // Fallback: image with "iba-cocktail" in path
+        if (!image_url && imgUrl.includes('iba-cocktail')) {
+          image_url = urlMatch[1];
         }
       }
     }
