@@ -15,6 +15,7 @@ interface MenuDrink {
   name: string;
   category: string;
   instructions: string | null;
+  description: string | null;
   image_path: string | null;
   times_made: number;
   menu_drink_id: number;
@@ -308,6 +309,11 @@ export function Menu() {
                 )}
                 <div style={{ fontWeight: 600 }}>{drink.name}</div>
                 <div className="badge" style={{ marginTop: "0.25rem" }}>{drink.category}</div>
+                {drink.description && (
+                  <p style={{ marginTop: "0.5rem", fontSize: "0.8125rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                    {drink.description}
+                  </p>
+                )}
                 <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
                   {drink.canMake ? (
                     showLowWarning ? (

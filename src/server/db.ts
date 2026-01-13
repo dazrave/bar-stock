@@ -361,6 +361,9 @@ export const drinkQueries = {
   incrementTimesMade: db.query<Drink, [number]>(
     "UPDATE drinks SET times_made = times_made + 1 WHERE id = ? RETURNING *"
   ),
+  updateDescription: db.query<Drink, [string | null, number]>(
+    "UPDATE drinks SET description = ? WHERE id = ? RETURNING *"
+  ),
 };
 
 // Drink ingredient queries

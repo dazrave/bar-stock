@@ -287,6 +287,68 @@ app.post("/api/drinks/:id/make", requireAuth(), (c) => {
   return c.json({ success: true, updatedStock, drink: updatedDrink });
 });
 
+// Generate AI description for a drink
+app.post("/api/drinks/:id/generate-description", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const drink = drinkQueries.getById.get(id);
+  if (!drink) {
+    return c.json({ error: "Drink not found" }, 404);
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "OpenAI API key not configured" }, 500);
+  }
+
+  const ingredients = ingredientQueries.getByDrinkId.all(id);
+  const ingredientList = ingredients.map((i) => i.ingredient_name).join(", ");
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a cocktail expert writing short, enticing descriptions for a bar menu. Keep descriptions under 15 words. Be evocative and appetizing. No quotes around the response.",
+          },
+          {
+            role: "user",
+            content: `Write a short menu description for "${drink.name}" (${drink.category}). Ingredients: ${ingredientList}.`,
+          },
+        ],
+        max_tokens: 50,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("OpenAI error:", error);
+      return c.json({ error: "Failed to generate description" }, 500);
+    }
+
+    const data = await response.json();
+    const description = data.choices?.[0]?.message?.content?.trim();
+
+    if (description) {
+      const updated = drinkQueries.updateDescription.get(description, id);
+      return c.json({ success: true, drink: updated });
+    }
+
+    return c.json({ error: "No description generated" }, 500);
+  } catch (err) {
+    console.error("OpenAI request failed:", err);
+    return c.json({ error: "Failed to connect to OpenAI" }, 500);
+  }
+});
+
 // ============ SETTINGS ROUTES ============
 
 app.get("/api/settings", requireAuth(), (c) => {

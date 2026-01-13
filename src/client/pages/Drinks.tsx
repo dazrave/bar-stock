@@ -61,6 +61,7 @@ interface DrinkItem {
   name: string;
   category: string;
   instructions: string | null;
+  description: string | null;
   image_path: string | null;
   times_made: number;
   ingredients: Ingredient[];
@@ -84,6 +85,7 @@ export function Drinks() {
   const [editingDrink, setEditingDrink] = useState<DrinkItem | null>(null);
   const [filter, setFilter] = useState("All");
   const [makingDrink, setMakingDrink] = useState<number | null>(null);
+  const [generatingDesc, setGeneratingDesc] = useState<number | null>(null);
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -251,6 +253,26 @@ export function Drinks() {
     }
   };
 
+  const handleGenerateDescription = async (drink: DrinkItem) => {
+    setGeneratingDesc(drink.id);
+    try {
+      const res = await fetch(`/api/drinks/${drink.id}/generate-description`, { method: "POST" });
+      const data = await res.json();
+      if (data.drink) {
+        setDrinks((prev) =>
+          prev.map((d) => (d.id === drink.id ? { ...d, description: data.drink.description } : d))
+        );
+        showToast("Description generated!");
+      } else {
+        showToast(data.error || "Failed to generate", "error");
+      }
+    } catch (err) {
+      showToast("Failed to generate description", "error");
+    } finally {
+      setGeneratingDesc(null);
+    }
+  };
+
   const addIngredient = () => {
     setFormData({
       ...formData,
@@ -356,6 +378,21 @@ export function Drinks() {
                   <div className="badge badge-danger">Missing {getMissingCount(drink)}</div>
                 )}
               </div>
+
+              {drink.description ? (
+                <p style={{ marginTop: "0.75rem", fontSize: "0.875rem", fontStyle: "italic", color: "var(--text-secondary)" }}>
+                  {drink.description}
+                </p>
+              ) : (
+                <button
+                  className="btn btn-secondary btn-xs"
+                  style={{ marginTop: "0.75rem" }}
+                  onClick={() => handleGenerateDescription(drink)}
+                  disabled={generatingDesc === drink.id}
+                >
+                  {generatingDesc === drink.id ? "Generating..." : "✨ Generate Description"}
+                </button>
+              )}
 
               {drink.ingredients.length > 0 && (
                 <div style={{ marginTop: "0.75rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
