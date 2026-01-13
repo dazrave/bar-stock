@@ -184,5 +184,12 @@ export function formatMeasureWithMl(measure: string): string {
     if (tbsp > 0) return `${roundToTen(tbsp * 15)}ml`;
   }
 
+  // Check for bar spoons and convert (1 bar spoon ≈ 5ml)
+  const barspoonMatch = trimmed.match(/^([\d.\/\s]+)?\s*bar\s*spoons?$/i);
+  if (barspoonMatch) {
+    const count = barspoonMatch[1] ? parseFraction(barspoonMatch[1]) : 1;
+    if (count > 0) return `${roundToTen(count * 5)}ml`;
+  }
+
   return measure.trim();
 }

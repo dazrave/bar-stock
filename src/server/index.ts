@@ -90,15 +90,15 @@ app.get("/api/stock", requireAuth(true), (c) => {
 });
 
 app.post("/api/stock", requireAuth(), async (c) => {
-  const { name, category, current_ml, total_ml, image_path, unit_type } = await c.req.json();
-  const stock = stockQueries.create.get(name, category || "Other", current_ml || 0, total_ml || 0, image_path || null, unit_type || "ml");
+  const { name, category, current_ml, total_ml, image_path, unit_type, aliases } = await c.req.json();
+  const stock = stockQueries.create.get(name, category || "Other", current_ml || 0, total_ml || 0, image_path || null, unit_type || "ml", aliases || null);
   return c.json(stock, 201);
 });
 
 app.put("/api/stock/:id", requireAuth(), async (c) => {
   const id = parseInt(c.req.param("id"));
-  const { name, category, current_ml, total_ml, image_path, unit_type } = await c.req.json();
-  const stock = stockQueries.update.get(name, category, current_ml, total_ml, image_path || null, unit_type || "ml", id);
+  const { name, category, current_ml, total_ml, image_path, unit_type, aliases } = await c.req.json();
+  const stock = stockQueries.update.get(name, category, current_ml, total_ml, image_path || null, unit_type || "ml", aliases || null, id);
   if (!stock) {
     return c.json({ error: "Not found" }, 404);
   }
@@ -392,15 +392,30 @@ app.get("/api/cocktaildb/count", requireAuth(true), (c) => {
   return c.json({ count: result?.count || 0 });
 });
 
-// Helper to fuzzy match ingredient name to stock
-const findStockMatch = (ingredientName: string, stockItems: Array<{ id: number; name: string }>) => {
+// Helper to fuzzy match ingredient name to stock (including aliases)
+const findStockMatch = (ingredientName: string, stockItems: Array<{ id: number; name: string; aliases: string | null }>) => {
   const lower = ingredientName.toLowerCase();
-  return stockItems.find(
-    (s) =>
+  return stockItems.find((s) => {
+    // Check name
+    if (
       s.name.toLowerCase() === lower ||
       s.name.toLowerCase().includes(lower) ||
       lower.includes(s.name.toLowerCase())
-  );
+    ) {
+      return true;
+    }
+    // Check aliases
+    if (s.aliases) {
+      const aliasList = s.aliases.split(",").map((a) => a.trim().toLowerCase());
+      return aliasList.some(
+        (alias) =>
+          alias === lower ||
+          alias.includes(lower) ||
+          lower.includes(alias)
+      );
+    }
+    return false;
+  });
 };
 
 app.post("/api/cocktaildb/import/:id", requireAuth(), async (c) => {
@@ -837,8 +852,8 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
         // Decode any HTML entities
         const decodedText = decodeHtmlEntities(text);
 
-        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Tablespoon Absinthe", "Top up Ginger beer"
-        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|barspoons?|parts?)?|top\s*up)\s+(.+)$/i);
+        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Tablespoon Absinthe", "Top up Ginger beer", "Bar Spoon Maraschino"
+        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?)?|(?:bar\s*spoon)|top\s*up)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({
             measure: measureMatch[1].trim(),
@@ -1054,6 +1069,8 @@ app.post("/api/shopping/:id/bought", requireAuth(), async (c) => {
     category || "Other",
     total_ml,
     total_ml,
+    null,
+    "ml",
     null
   );
 
@@ -1080,6 +1097,8 @@ app.post("/api/shopping/bought-all", requireAuth(), async (c) => {
           newTotal,
           newTotal,
           stock.image_path,
+          stock.unit_type || "ml",
+          stock.aliases,
           stock.id
         );
         shoppingQueries.delete.run(id);
@@ -1094,6 +1113,8 @@ app.post("/api/shopping/bought-all", requireAuth(), async (c) => {
         category || "Other",
         total_ml,
         total_ml,
+        null,
+        "ml",
         null
       );
       shoppingQueries.delete.run(id);

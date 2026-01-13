@@ -15,6 +15,7 @@ interface StockItem {
   total_used_ml: number;
   unit_type: "ml" | "count";
   image_path: string | null;
+  aliases: string | null;
 }
 
 const CATEGORIES = STOCK_CATEGORIES;
@@ -43,6 +44,7 @@ export function Stock() {
     total_input: "700ml",
     current_input: "700ml",
     unit_type: "ml" as "ml" | "count",
+    aliases: "",
   });
 
   useEffect(() => {
@@ -73,7 +75,7 @@ export function Stock() {
 
   const handleAdd = () => {
     setEditingItem(null);
-    setFormData({ name: "", category: "Spirits", total_input: "700ml", current_input: "700ml", unit_type: "ml" });
+    setFormData({ name: "", category: "Spirits", total_input: "700ml", current_input: "700ml", unit_type: "ml", aliases: "" });
     setShowModal(true);
   };
 
@@ -85,6 +87,7 @@ export function Stock() {
       total_input: item.unit_type === "count" ? `${item.total_ml}` : `${item.total_ml}ml`,
       current_input: item.unit_type === "count" ? `${item.current_ml}` : `${item.current_ml}ml`,
       unit_type: item.unit_type || "ml",
+      aliases: item.aliases || "",
     });
     setShowModal(true);
   };
@@ -125,6 +128,7 @@ export function Stock() {
       total_ml,
       current_ml: Math.min(current_ml, total_ml),
       unit_type: formData.unit_type,
+      aliases: formData.aliases.trim() || null,
     };
 
     try {
@@ -532,6 +536,19 @@ export function Stock() {
                   Accepts: 50% (of bottle), 350ml, 35cl, or 12oz
                 </div>
               )}
+            </div>
+
+            <div className="form-group">
+              <label className="label">Aliases (optional)</label>
+              <input
+                className="input"
+                placeholder="e.g. Smirnoff, Grey Goose, Absolut"
+                value={formData.aliases}
+                onChange={(e) => setFormData({ ...formData, aliases: e.target.value })}
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                Comma-separated brand names or alternative names for auto-matching
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem" }}>

@@ -34,6 +34,7 @@ interface StockItem {
   name: string;
   current_ml: number;
   total_ml: number;
+  aliases: string | null;
 }
 
 interface ShoppingItem {
@@ -243,15 +244,30 @@ export function Browse() {
     }
   };
 
-  // Find matching stock item by name (case insensitive, partial match)
+  // Find matching stock item by name or aliases (case insensitive, partial match)
   const findStockMatch = (ingredientName: string): StockItem | undefined => {
     const lower = ingredientName.toLowerCase();
-    return stock.find(
-      (s) =>
+    return stock.find((s) => {
+      // Check name
+      if (
         s.name.toLowerCase() === lower ||
         s.name.toLowerCase().includes(lower) ||
         lower.includes(s.name.toLowerCase())
-    );
+      ) {
+        return true;
+      }
+      // Check aliases
+      if (s.aliases) {
+        const aliasList = s.aliases.split(",").map((a) => a.trim().toLowerCase());
+        return aliasList.some(
+          (alias) =>
+            alias === lower ||
+            alias.includes(lower) ||
+            lower.includes(alias)
+        );
+      }
+      return false;
+    });
   };
 
   // Check if a drink can be made (all ingredients have stock with current_ml > 0)
@@ -701,7 +717,7 @@ export function Browse() {
                           </span>
                           {/* Google search icon */}
                           <a
-                            href={`https://www.google.com/search?q=${encodeURIComponent(ing.name + " drink")}`}
+                            href={`https://www.google.com/search?q=${encodeURIComponent(ing.name + " drink/brands")}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}

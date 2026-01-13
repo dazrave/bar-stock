@@ -219,6 +219,14 @@ try {
   // Column already exists
 }
 
+// Add aliases column to stock table (migration)
+try {
+  db.run("ALTER TABLE stock ADD COLUMN aliases TEXT");
+  console.log("Added aliases column to stock");
+} catch {
+  // Column already exists
+}
+
 // Types
 export interface Stock {
   id: number;
@@ -229,6 +237,7 @@ export interface Stock {
   total_used_ml: number;
   unit_type: "ml" | "count";
   image_path: string | null;
+  aliases: string | null;
   created_at: string;
 }
 
@@ -352,11 +361,11 @@ export interface IngredientSwap {
 export const stockQueries = {
   getAll: db.query<Stock, []>("SELECT * FROM stock ORDER BY category, name"),
   getById: db.query<Stock, [number]>("SELECT * FROM stock WHERE id = ?"),
-  create: db.query<Stock, [string, string, number, number, string | null, string]>(
-    "INSERT INTO stock (name, category, current_ml, total_ml, image_path, unit_type) VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
+  create: db.query<Stock, [string, string, number, number, string | null, string, string | null]>(
+    "INSERT INTO stock (name, category, current_ml, total_ml, image_path, unit_type, aliases) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *"
   ),
-  update: db.query<Stock, [string, string, number, number, string | null, string, number]>(
-    "UPDATE stock SET name = ?, category = ?, current_ml = ?, total_ml = ?, image_path = ?, unit_type = ? WHERE id = ? RETURNING *"
+  update: db.query<Stock, [string, string, number, number, string | null, string, string | null, number]>(
+    "UPDATE stock SET name = ?, category = ?, current_ml = ?, total_ml = ?, image_path = ?, unit_type = ?, aliases = ? WHERE id = ? RETURNING *"
   ),
   updateVolume: db.query<Stock, [number, number]>(
     "UPDATE stock SET current_ml = ? WHERE id = ? RETURNING *"
