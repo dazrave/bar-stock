@@ -1,0 +1,205 @@
+import { Database } from "bun:sqlite";
+
+// Ensure data directory exists
+const dataDir = "./data";
+await Bun.write(`${dataDir}/.gitkeep`, "");
+
+const db = new Database(`${dataDir}/bar.db`, { create: true });
+
+// Enable WAL mode for better performance
+db.exec("PRAGMA journal_mode = WAL");
+
+// Initialize schema
+db.exec(`
+  CREATE TABLE IF NOT EXISTS passcodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL CHECK (type IN ('owner', 'guest')),
+    code TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS stock (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'Other',
+    current_ml INTEGER NOT NULL DEFAULT 0,
+    total_ml INTEGER NOT NULL DEFAULT 0,
+    image_path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS drinks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'Other',
+    instructions TEXT,
+    image_path TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS drink_ingredients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    drink_id INTEGER NOT NULL,
+    stock_id INTEGER,
+    ingredient_name TEXT NOT NULL,
+    amount_ml INTEGER,
+    amount_text TEXT,
+    optional INTEGER DEFAULT 0,
+    FOREIGN KEY (drink_id) REFERENCES drinks(id) ON DELETE CASCADE,
+    FOREIGN KEY (stock_id) REFERENCES stock(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS cocktaildb_drinks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    external_id TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT,
+    glass TEXT,
+    instructions TEXT,
+    image_path TEXT,
+    image_url TEXT,
+    ingredients_json TEXT,
+    scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+// Insert default passcodes if none exist
+const existingPasscodes = db.query("SELECT COUNT(*) as count FROM passcodes").get() as { count: number };
+if (existingPasscodes.count === 0) {
+  db.run("INSERT INTO passcodes (type, code) VALUES ('owner', '1234')");
+  db.run("INSERT INTO passcodes (type, code) VALUES ('guest', '0000')");
+  console.log("Default passcodes created: owner=1234, guest=0000");
+}
+
+// Types
+export interface Stock {
+  id: number;
+  name: string;
+  category: string;
+  current_ml: number;
+  total_ml: number;
+  image_path: string | null;
+  created_at: string;
+}
+
+export interface Drink {
+  id: number;
+  name: string;
+  category: string;
+  instructions: string | null;
+  image_path: string | null;
+  created_at: string;
+}
+
+export interface DrinkIngredient {
+  id: number;
+  drink_id: number;
+  stock_id: number | null;
+  ingredient_name: string;
+  amount_ml: number | null;
+  amount_text: string | null;
+  optional: number;
+}
+
+export interface CocktailDBDrink {
+  id: number;
+  external_id: string;
+  name: string;
+  category: string | null;
+  glass: string | null;
+  instructions: string | null;
+  image_path: string | null;
+  image_url: string | null;
+  ingredients_json: string;
+  scraped_at: string;
+}
+
+export interface Passcode {
+  id: number;
+  type: "owner" | "guest";
+  code: string;
+}
+
+// Stock queries
+export const stockQueries = {
+  getAll: db.query<Stock, []>("SELECT * FROM stock ORDER BY category, name"),
+  getById: db.query<Stock, [number]>("SELECT * FROM stock WHERE id = ?"),
+  create: db.query<Stock, [string, string, number, number, string | null]>(
+    "INSERT INTO stock (name, category, current_ml, total_ml, image_path) VALUES (?, ?, ?, ?, ?) RETURNING *"
+  ),
+  update: db.query<Stock, [string, string, number, number, string | null, number]>(
+    "UPDATE stock SET name = ?, category = ?, current_ml = ?, total_ml = ?, image_path = ? WHERE id = ? RETURNING *"
+  ),
+  updateVolume: db.query<Stock, [number, number]>(
+    "UPDATE stock SET current_ml = ? WHERE id = ? RETURNING *"
+  ),
+  delete: db.query<null, [number]>("DELETE FROM stock WHERE id = ?"),
+};
+
+// Drink queries
+export const drinkQueries = {
+  getAll: db.query<Drink, []>("SELECT * FROM drinks ORDER BY category, name"),
+  getById: db.query<Drink, [number]>("SELECT * FROM drinks WHERE id = ?"),
+  create: db.query<Drink, [string, string, string | null, string | null]>(
+    "INSERT INTO drinks (name, category, instructions, image_path) VALUES (?, ?, ?, ?) RETURNING *"
+  ),
+  update: db.query<Drink, [string, string, string | null, string | null, number]>(
+    "UPDATE drinks SET name = ?, category = ?, instructions = ?, image_path = ? WHERE id = ? RETURNING *"
+  ),
+  delete: db.query<null, [number]>("DELETE FROM drinks WHERE id = ?"),
+};
+
+// Drink ingredient queries
+export const ingredientQueries = {
+  getByDrinkId: db.query<DrinkIngredient, [number]>(
+    "SELECT * FROM drink_ingredients WHERE drink_id = ?"
+  ),
+  create: db.query<DrinkIngredient, [number, number | null, string, number | null, string | null, number]>(
+    "INSERT INTO drink_ingredients (drink_id, stock_id, ingredient_name, amount_ml, amount_text, optional) VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
+  ),
+  deleteByDrinkId: db.query<null, [number]>("DELETE FROM drink_ingredients WHERE drink_id = ?"),
+};
+
+// Passcode queries
+export const passcodeQueries = {
+  getAll: db.query<Passcode, []>("SELECT * FROM passcodes"),
+  getByType: db.query<Passcode, [string]>("SELECT * FROM passcodes WHERE type = ?"),
+  validate: db.query<Passcode, [string]>("SELECT * FROM passcodes WHERE code = ?"),
+  update: db.query<Passcode, [string, string]>(
+    "UPDATE passcodes SET code = ? WHERE type = ? RETURNING *"
+  ),
+};
+
+// CocktailDB queries
+export const cocktailDBQueries = {
+  getAll: db.query<CocktailDBDrink, []>("SELECT * FROM cocktaildb_drinks ORDER BY name"),
+  search: db.query<CocktailDBDrink, [string]>(
+    "SELECT * FROM cocktaildb_drinks WHERE name LIKE ? ORDER BY name LIMIT 50"
+  ),
+  getById: db.query<CocktailDBDrink, [number]>("SELECT * FROM cocktaildb_drinks WHERE id = ?"),
+  getByExternalId: db.query<CocktailDBDrink, [string]>(
+    "SELECT * FROM cocktaildb_drinks WHERE external_id = ?"
+  ),
+  getRandom: () => {
+    const count = db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM cocktaildb_drinks").get();
+    if (!count || count.count === 0) return null;
+    const offset = Math.floor(Math.random() * count.count);
+    return db.query<CocktailDBDrink, []>(`SELECT * FROM cocktaildb_drinks LIMIT 1 OFFSET ${offset}`).get();
+  },
+  upsert: db.query<CocktailDBDrink, [string, string, string | null, string | null, string | null, string | null, string | null, string]>(
+    `INSERT INTO cocktaildb_drinks (external_id, name, category, glass, instructions, image_path, image_url, ingredients_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(external_id) DO UPDATE SET
+       name = excluded.name,
+       category = excluded.category,
+       glass = excluded.glass,
+       instructions = excluded.instructions,
+       image_url = excluded.image_url,
+       ingredients_json = excluded.ingredients_json,
+       scraped_at = CURRENT_TIMESTAMP
+     RETURNING *`
+  ),
+  getCount: db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM cocktaildb_drinks"),
+};
+
+export { db };

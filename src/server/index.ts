@@ -1,0 +1,397 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import { serveStatic } from "hono/bun";
+import {
+  stockQueries,
+  drinkQueries,
+  ingredientQueries,
+  passcodeQueries,
+  cocktailDBQueries,
+  type Stock,
+} from "./db";
+
+const app = new Hono();
+
+// CORS for development
+app.use("/api/*", cors());
+
+// Session helper
+const getSession = (c: any): { type: "owner" | "guest" } | null => {
+  const session = getCookie(c, "session");
+  if (!session) return null;
+  try {
+    return JSON.parse(session);
+  } catch {
+    return null;
+  }
+};
+
+// Auth middleware
+const requireAuth = (allowGuest = false) => {
+  return async (c: any, next: any) => {
+    const session = getSession(c);
+    if (!session) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    if (!allowGuest && session.type !== "owner") {
+      return c.json({ error: "Owner access required" }, 403);
+    }
+    c.set("session", session);
+    await next();
+  };
+};
+
+// ============ AUTH ROUTES ============
+
+app.post("/api/auth", async (c) => {
+  const { code } = await c.req.json();
+  const passcode = passcodeQueries.validate.get(code);
+
+  if (!passcode) {
+    return c.json({ error: "Invalid passcode" }, 401);
+  }
+
+  setCookie(c, "session", JSON.stringify({ type: passcode.type }), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Lax",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+  });
+
+  return c.json({ type: passcode.type });
+});
+
+app.post("/api/logout", (c) => {
+  deleteCookie(c, "session");
+  return c.json({ success: true });
+});
+
+app.get("/api/session", (c) => {
+  const session = getSession(c);
+  return c.json(session || { type: null });
+});
+
+// ============ STOCK ROUTES ============
+
+app.get("/api/stock", requireAuth(true), (c) => {
+  const stock = stockQueries.getAll.all();
+  return c.json(stock);
+});
+
+app.post("/api/stock", requireAuth(), async (c) => {
+  const { name, category, current_ml, total_ml, image_path } = await c.req.json();
+  const stock = stockQueries.create.get(name, category || "Other", current_ml || 0, total_ml || 0, image_path || null);
+  return c.json(stock, 201);
+});
+
+app.put("/api/stock/:id", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const { name, category, current_ml, total_ml, image_path } = await c.req.json();
+  const stock = stockQueries.update.get(name, category, current_ml, total_ml, image_path || null, id);
+  if (!stock) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return c.json(stock);
+});
+
+app.patch("/api/stock/:id/volume", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const { current_ml } = await c.req.json();
+  const stock = stockQueries.updateVolume.get(current_ml, id);
+  if (!stock) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return c.json(stock);
+});
+
+app.delete("/api/stock/:id", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  stockQueries.delete.run(id);
+  return c.json({ success: true });
+});
+
+// ============ DRINKS ROUTES ============
+
+app.get("/api/drinks", requireAuth(true), (c) => {
+  const drinks = drinkQueries.getAll.all();
+  const drinksWithIngredients = drinks.map((drink) => ({
+    ...drink,
+    ingredients: ingredientQueries.getByDrinkId.all(drink.id),
+  }));
+  return c.json(drinksWithIngredients);
+});
+
+app.get("/api/drinks/:id", requireAuth(true), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const drink = drinkQueries.getById.get(id);
+  if (!drink) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  const ingredients = ingredientQueries.getByDrinkId.all(id);
+  return c.json({ ...drink, ingredients });
+});
+
+app.post("/api/drinks", requireAuth(), async (c) => {
+  const { name, category, instructions, image_path, ingredients } = await c.req.json();
+  const drink = drinkQueries.create.get(name, category || "Other", instructions || null, image_path || null);
+
+  if (drink && ingredients?.length) {
+    for (const ing of ingredients) {
+      ingredientQueries.create.run(
+        drink.id,
+        ing.stock_id || null,
+        ing.ingredient_name,
+        ing.amount_ml || null,
+        ing.amount_text || null,
+        ing.optional ? 1 : 0
+      );
+    }
+  }
+
+  const savedIngredients = drink ? ingredientQueries.getByDrinkId.all(drink.id) : [];
+  return c.json({ ...drink, ingredients: savedIngredients }, 201);
+});
+
+app.put("/api/drinks/:id", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const { name, category, instructions, image_path, ingredients } = await c.req.json();
+
+  const drink = drinkQueries.update.get(name, category, instructions || null, image_path || null, id);
+  if (!drink) {
+    return c.json({ error: "Not found" }, 404);
+  }
+
+  ingredientQueries.deleteByDrinkId.run(id);
+  if (ingredients?.length) {
+    for (const ing of ingredients) {
+      ingredientQueries.create.run(
+        id,
+        ing.stock_id || null,
+        ing.ingredient_name,
+        ing.amount_ml || null,
+        ing.amount_text || null,
+        ing.optional ? 1 : 0
+      );
+    }
+  }
+
+  const savedIngredients = ingredientQueries.getByDrinkId.all(id);
+  return c.json({ ...drink, ingredients: savedIngredients });
+});
+
+app.delete("/api/drinks/:id", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  drinkQueries.delete.run(id);
+  return c.json({ success: true });
+});
+
+app.post("/api/drinks/:id/make", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const drink = drinkQueries.getById.get(id);
+  if (!drink) {
+    return c.json({ error: "Drink not found" }, 404);
+  }
+
+  const ingredients = ingredientQueries.getByDrinkId.all(id);
+  const updatedStock: Stock[] = [];
+
+  for (const ing of ingredients) {
+    if (ing.stock_id && ing.amount_ml) {
+      const stock = stockQueries.getById.get(ing.stock_id);
+      if (stock) {
+        const newAmount = Math.max(0, stock.current_ml - ing.amount_ml);
+        const updated = stockQueries.updateVolume.get(newAmount, ing.stock_id);
+        if (updated) updatedStock.push(updated);
+      }
+    }
+  }
+
+  return c.json({ success: true, updatedStock });
+});
+
+// ============ SETTINGS ROUTES ============
+
+app.get("/api/settings", requireAuth(), (c) => {
+  const passcodes = passcodeQueries.getAll.all();
+  return c.json({ passcodes });
+});
+
+app.put("/api/settings/passcode", requireAuth(), async (c) => {
+  const { type, code } = await c.req.json();
+  if (!["owner", "guest"].includes(type)) {
+    return c.json({ error: "Invalid type" }, 400);
+  }
+  if (!code || code.length < 4) {
+    return c.json({ error: "Code must be at least 4 characters" }, 400);
+  }
+  const updated = passcodeQueries.update.get(code, type);
+  return c.json(updated);
+});
+
+// ============ COCKTAILDB ROUTES ============
+
+app.get("/api/cocktaildb/search", requireAuth(true), (c) => {
+  const q = c.req.query("q") || "";
+  const drinks = cocktailDBQueries.search.all(`%${q}%`);
+  return c.json(drinks);
+});
+
+app.get("/api/cocktaildb/random", requireAuth(true), (c) => {
+  const drink = cocktailDBQueries.getRandom();
+  return c.json(drink);
+});
+
+app.get("/api/cocktaildb/count", requireAuth(true), (c) => {
+  const result = cocktailDBQueries.getCount.get();
+  return c.json({ count: result?.count || 0 });
+});
+
+app.post("/api/cocktaildb/import/:id", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const cocktailDBDrink = cocktailDBQueries.getById.get(id);
+
+  if (!cocktailDBDrink) {
+    return c.json({ error: "Drink not found in cache" }, 404);
+  }
+
+  let ingredients: Array<{ name: string; measure: string }> = [];
+  try {
+    ingredients = JSON.parse(cocktailDBDrink.ingredients_json || "[]");
+  } catch {}
+
+  const drink = drinkQueries.create.get(
+    cocktailDBDrink.name,
+    cocktailDBDrink.category || "Other",
+    cocktailDBDrink.instructions,
+    cocktailDBDrink.image_url // Use the URL as image path
+  );
+
+  if (drink) {
+    for (const ing of ingredients) {
+      ingredientQueries.create.run(
+        drink.id,
+        null,
+        ing.name,
+        null,
+        ing.measure || null,
+        0
+      );
+    }
+  }
+
+  const savedIngredients = drink ? ingredientQueries.getByDrinkId.all(drink.id) : [];
+  return c.json({ ...drink, ingredients: savedIngredients }, 201);
+});
+
+app.post("/api/cocktaildb/sync", requireAuth(), async (c) => {
+  const API_KEY = "1";
+  const baseUrl = "https://www.thecocktaildb.com/api/json/v1";
+
+  let synced = 0;
+  const errors: string[] = [];
+  const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+
+  for (const letter of letters) {
+    try {
+      const res = await fetch(`${baseUrl}/${API_KEY}/search.php?f=${letter}`);
+      const data = (await res.json()) as { drinks: any[] | null };
+
+      if (data.drinks) {
+        for (const d of data.drinks) {
+          const ingredients: Array<{ name: string; measure: string }> = [];
+          for (let i = 1; i <= 15; i++) {
+            const name = d[`strIngredient${i}`];
+            const measure = d[`strMeasure${i}`];
+            if (name && name.trim()) {
+              ingredients.push({ name: name.trim(), measure: measure?.trim() || "" });
+            }
+          }
+
+          cocktailDBQueries.upsert.run(
+            d.idDrink,
+            d.strDrink,
+            d.strCategory,
+            d.strGlass,
+            d.strInstructions,
+            null,
+            d.strDrinkThumb,
+            JSON.stringify(ingredients)
+          );
+          synced++;
+        }
+      }
+    } catch (err) {
+      errors.push(`Letter ${letter}: ${err}`);
+    }
+  }
+
+  return c.json({ synced, errors: errors.length > 0 ? errors : undefined });
+});
+
+// ============ UPLOAD ROUTES ============
+
+app.post("/api/upload", requireAuth(), async (c) => {
+  const body = await c.req.parseBody();
+  const file = body.file as File;
+
+  if (!file) {
+    return c.json({ error: "No file provided" }, 400);
+  }
+
+  const ext = file.name.split(".").pop() || "jpg";
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const path = `./data/uploads/${filename}`;
+
+  await Bun.write(path, file);
+
+  return c.json({ path: `/uploads/${filename}` });
+});
+
+// Serve uploaded files
+app.get("/uploads/*", async (c) => {
+  const filepath = `./data${c.req.path}`;
+  const file = Bun.file(filepath);
+
+  if (!(await file.exists())) {
+    return c.json({ error: "Not found" }, 404);
+  }
+
+  return new Response(file);
+});
+
+// Export for use with Bun.serve
+export { app };
+
+// Start server with Bun.serve for HTML support
+const port = parseInt(process.env.PORT || "3000");
+
+// Import the HTML file for Bun's bundler
+import homepage from "../client/index.html";
+
+const server = Bun.serve({
+  port,
+  async fetch(req) {
+    const url = new URL(req.url);
+
+    // API routes handled by Hono
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/uploads/")) {
+      return app.fetch(req);
+    }
+
+    // Serve the SPA for all other routes
+    return homepage;
+  },
+  development: {
+    hmr: true,
+    console: true,
+  },
+});
+
+console.log(`
+  🍸 BarStock running at http://localhost:${port}
+
+  Default passcodes:
+    Owner: 1234
+    Guest: 0000
+`);
