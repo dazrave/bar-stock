@@ -866,8 +866,8 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
         // Decode any HTML entities
         const decodedText = decodeHtmlEntities(text);
 
-        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Tablespoon Absinthe", "Top up Ginger beer", "Bar Spoon Maraschino"
-        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?)?|(?:bar\s*spoon)|top\s*up)\s+(.+)$/i);
+        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Tablespoon Absinthe", "Top up with Ginger beer", "Bar Spoon Maraschino"
+        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?)?|(?:bar\s*spoon)|top\s*up(?:\s*with)?)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({
             measure: measureMatch[1].trim(),
