@@ -200,6 +200,14 @@ try {
   // Column already exists
 }
 
+// Add description column to drinks table (migration)
+try {
+  db.run("ALTER TABLE drinks ADD COLUMN description TEXT");
+  console.log("Added description column to drinks");
+} catch {
+  // Column already exists
+}
+
 // Types
 export interface Stock {
   id: number;
@@ -218,6 +226,7 @@ export interface Drink {
   name: string;
   category: string;
   instructions: string | null;
+  description: string | null;
   image_path: string | null;
   times_made: number;
   created_at: string;

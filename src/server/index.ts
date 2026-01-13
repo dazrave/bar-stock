@@ -195,6 +195,65 @@ app.delete("/api/drinks/:id", requireAuth(), (c) => {
   return c.json({ success: true });
 });
 
+// Parse amount text like "1 oz", "1 1/2 oz", "30ml", "2 cl" to ml
+function parseAmountToMl(text: string | null): number | null {
+  if (!text) return null;
+  const trimmed = text.trim().toLowerCase();
+
+  // Parse fractions like "1 1/2" or "1/2"
+  const parseFraction = (str: string): number => {
+    let total = 0;
+    const parts = str.trim().split(/\s+/);
+    for (const part of parts) {
+      if (part.includes("/")) {
+        const [num, denom] = part.split("/").map(Number);
+        if (denom) total += num / denom;
+      } else {
+        total += parseFloat(part) || 0;
+      }
+    }
+    return total;
+  };
+
+  // Ounces: "1 oz", "1 1/2 oz", "1.5 oz"
+  const ozMatch = trimmed.match(/^([\d.\/\s]+)\s*oz/);
+  if (ozMatch) {
+    const oz = parseFraction(ozMatch[1]);
+    if (oz > 0) return Math.round(oz * 30);
+  }
+
+  // Milliliters: "30ml", "30 ml"
+  const mlMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*ml/);
+  if (mlMatch) return Math.round(parseFloat(mlMatch[1]));
+
+  // Centiliters: "3cl", "3 cl"
+  const clMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*cl/);
+  if (clMatch) return Math.round(parseFloat(clMatch[1]) * 10);
+
+  // Tablespoons: "1 tbsp"
+  const tbspMatch = trimmed.match(/^([\d.\/\s]+)\s*(?:tbsp|tblsp|tablespoon)/);
+  if (tbspMatch) {
+    const tbsp = parseFraction(tbspMatch[1]);
+    if (tbsp > 0) return Math.round(tbsp * 15);
+  }
+
+  // Teaspoons: "1 tsp"
+  const tspMatch = trimmed.match(/^([\d.\/\s]+)\s*(?:tsp|teaspoon)/);
+  if (tspMatch) {
+    const tsp = parseFraction(tspMatch[1]);
+    if (tsp > 0) return Math.round(tsp * 5);
+  }
+
+  // Dashes/splashes - small amounts (approx 1ml each)
+  const dashMatch = trimmed.match(/^(\d+)?\s*(?:dash|splash)/);
+  if (dashMatch) {
+    const count = parseInt(dashMatch[1]) || 1;
+    return count; // 1ml per dash
+  }
+
+  return null;
+}
+
 app.post("/api/drinks/:id/make", requireAuth(), (c) => {
   const id = parseInt(c.req.param("id"));
   const drink = drinkQueries.getById.get(id);
@@ -206,14 +265,18 @@ app.post("/api/drinks/:id/make", requireAuth(), (c) => {
   const updatedStock: Stock[] = [];
 
   for (const ing of ingredients) {
-    if (ing.stock_id && ing.amount_ml) {
-      const stock = stockQueries.getById.get(ing.stock_id);
-      if (stock) {
-        const amountUsed = Math.min(ing.amount_ml, stock.current_ml);
-        const newAmount = Math.max(0, stock.current_ml - ing.amount_ml);
-        // Update current_ml and add to total_used_ml
-        const updated = stockQueries.updateVolumeAndUsed.get(newAmount, amountUsed, ing.stock_id);
-        if (updated) updatedStock.push(updated);
+    if (ing.stock_id) {
+      // Use amount_ml if set, otherwise try to parse amount_text
+      const amountMl = ing.amount_ml || parseAmountToMl(ing.amount_text);
+      if (amountMl && amountMl > 0) {
+        const stock = stockQueries.getById.get(ing.stock_id);
+        if (stock) {
+          const amountUsed = Math.min(amountMl, stock.current_ml);
+          const newAmount = Math.max(0, stock.current_ml - amountMl);
+          // Update current_ml and add to total_used_ml
+          const updated = stockQueries.updateVolumeAndUsed.get(newAmount, amountUsed, ing.stock_id);
+          if (updated) updatedStock.push(updated);
+        }
       }
     }
   }
