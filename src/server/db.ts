@@ -88,6 +88,20 @@ db.exec(`
     FOREIGN KEY (drink_id) REFERENCES drinks(id) ON DELETE CASCADE,
     UNIQUE(shopping_list_id, drink_id)
   );
+
+  CREATE TABLE IF NOT EXISTS iba_drinks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT,
+    glass TEXT,
+    garnish TEXT,
+    method TEXT,
+    image_url TEXT,
+    ingredients_json TEXT,
+    hidden INTEGER DEFAULT 0,
+    scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Insert default passcodes if none exist
@@ -191,6 +205,20 @@ export interface ShoppingListDrink {
   id: number;
   shopping_list_id: number;
   drink_id: number;
+}
+
+export interface IBADrink {
+  id: number;
+  slug: string;
+  name: string;
+  category: string | null;
+  glass: string | null;
+  garnish: string | null;
+  method: string | null;
+  image_url: string | null;
+  ingredients_json: string;
+  hidden: number;
+  scraped_at: string;
 }
 
 export interface ShoppingListDrinkInfo {
@@ -337,6 +365,41 @@ export const shoppingQueries = {
     WHERE total_ml > 0 AND CAST(current_ml AS REAL) / total_ml <= 0.25
     ORDER BY CAST(current_ml AS REAL) / total_ml ASC
   `),
+};
+
+// IBA cocktail queries
+export const ibaQueries = {
+  getAll: db.query<IBADrink, []>("SELECT * FROM iba_drinks ORDER BY name"),
+  search: db.query<IBADrink, [string]>(
+    "SELECT * FROM iba_drinks WHERE name LIKE ? ORDER BY name LIMIT 50"
+  ),
+  getById: db.query<IBADrink, [number]>("SELECT * FROM iba_drinks WHERE id = ?"),
+  getBySlug: db.query<IBADrink, [string]>("SELECT * FROM iba_drinks WHERE slug = ?"),
+  getRandom: () => {
+    const count = db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM iba_drinks").get();
+    if (!count || count.count === 0) return null;
+    const offset = Math.floor(Math.random() * count.count);
+    return db.query<IBADrink, []>(`SELECT * FROM iba_drinks LIMIT 1 OFFSET ${offset}`).get();
+  },
+  upsert: db.query<IBADrink, [string, string, string | null, string | null, string | null, string | null, string | null, string]>(
+    `INSERT INTO iba_drinks (slug, name, category, glass, garnish, method, image_url, ingredients_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(slug) DO UPDATE SET
+       name = excluded.name,
+       category = excluded.category,
+       glass = excluded.glass,
+       garnish = excluded.garnish,
+       method = excluded.method,
+       image_url = excluded.image_url,
+       ingredients_json = excluded.ingredients_json,
+       scraped_at = CURRENT_TIMESTAMP
+     RETURNING *`
+  ),
+  getCount: db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM iba_drinks"),
+  getAllSlugs: db.query<{ slug: string }, []>("SELECT slug FROM iba_drinks"),
+  toggleHidden: db.query<IBADrink, [number]>(
+    "UPDATE iba_drinks SET hidden = NOT hidden WHERE id = ? RETURNING *"
+  ),
 };
 
 export { db };

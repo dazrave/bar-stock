@@ -2,18 +2,32 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useToast } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
 import { formatMeasureWithMl, formatVolume } from "../utils/volume";
+import { getGlassIcon } from "../utils/glassIcons";
 
-interface CocktailDBDrink {
+type Source = "cocktaildb" | "iba";
+
+interface BaseDrink {
   id: number;
-  external_id: string;
   name: string;
   category: string | null;
   glass: string | null;
-  instructions: string | null;
   image_url: string | null;
   ingredients_json: string;
   hidden: number;
 }
+
+interface CocktailDBDrink extends BaseDrink {
+  external_id: string;
+  instructions: string | null;
+}
+
+interface IBADrink extends BaseDrink {
+  slug: string;
+  garnish: string | null;
+  method: string | null;
+}
+
+type Drink = CocktailDBDrink | IBADrink;
 
 interface StockItem {
   id: number;
@@ -23,13 +37,15 @@ interface StockItem {
 }
 
 export function Browse() {
-  const [drinks, setDrinks] = useState<CocktailDBDrink[]>([]);
+  const [source, setSource] = useState<Source>("iba");
+  const [drinks, setDrinks] = useState<Drink[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
-  const [count, setCount] = useState(0);
+  const [cocktaildbCount, setCocktaildbCount] = useState(0);
+  const [ibaCount, setIbaCount] = useState(0);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [selectedDrink, setSelectedDrink] = useState<CocktailDBDrink | null>(null);
+  const [selectedDrink, setSelectedDrink] = useState<Drink | null>(null);
   const [importing, setImporting] = useState<number | null>(null);
   const [filterCanMake, setFilterCanMake] = useState(false);
   const { showToast } = useToast();
@@ -37,7 +53,7 @@ export function Browse() {
   const isOwner = session?.type === "owner";
 
   useEffect(() => {
-    fetchCount();
+    fetchCounts();
     // Fetch stock for ingredient matching
     fetch("/api/stock")
       .then((r) => r.json())
@@ -45,10 +61,21 @@ export function Browse() {
       .catch(() => {});
   }, []);
 
-  const fetchCount = async () => {
-    const res = await fetch("/api/cocktaildb/count");
-    const data = await res.json();
-    setCount(data.count);
+  // Reset search when source changes
+  useEffect(() => {
+    setSearch("");
+    setDrinks([]);
+  }, [source]);
+
+  const fetchCounts = async () => {
+    const [cocktaildbRes, ibaRes] = await Promise.all([
+      fetch("/api/cocktaildb/count"),
+      fetch("/api/iba/count"),
+    ]);
+    const cocktaildbData = await cocktaildbRes.json();
+    const ibaData = await ibaRes.json();
+    setCocktaildbCount(cocktaildbData.count || 0);
+    setIbaCount(ibaData.count || 0);
   };
 
   const handleSearch = async (q: string) => {
@@ -60,7 +87,8 @@ export function Browse() {
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/cocktaildb/search?q=${encodeURIComponent(q)}`);
+      const endpoint = source === "iba" ? "/api/iba/search" : "/api/cocktaildb/search";
+      const res = await fetch(`${endpoint}?q=${encodeURIComponent(q)}`);
       const data = await res.json();
       setDrinks(data);
     } catch (err) {
@@ -73,7 +101,8 @@ export function Browse() {
   const handleRandom = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/cocktaildb/random");
+      const endpoint = source === "iba" ? "/api/iba/random" : "/api/cocktaildb/random";
+      const res = await fetch(endpoint);
       const data = await res.json();
       if (data) {
         setSelectedDrink(data);
@@ -88,11 +117,13 @@ export function Browse() {
   };
 
   const handleSync = async () => {
-    if (!confirm("This will fetch drinks from CocktailDB (skips existing). Continue?")) return;
+    const sourceName = source === "iba" ? "IBA World" : "CocktailDB";
+    if (!confirm(`This will fetch drinks from ${sourceName} (skips existing). Continue?`)) return;
 
     setSyncing(true);
     try {
-      const res = await fetch("/api/cocktaildb/sync", { method: "POST" });
+      const endpoint = source === "iba" ? "/api/iba/sync" : "/api/cocktaildb/sync";
+      const res = await fetch(endpoint, { method: "POST" });
       const data = await res.json();
       if (data.synced > 0) {
         showToast(`Added ${data.synced} new drinks!${data.skipped > 0 ? ` (${data.skipped} already cached)` : ""}`);
@@ -101,7 +132,7 @@ export function Browse() {
       } else {
         showToast("No new drinks found");
       }
-      fetchCount();
+      fetchCounts();
     } catch (err) {
       showToast("Sync failed", "error");
     } finally {
@@ -109,7 +140,12 @@ export function Browse() {
     }
   };
 
-  const handleImport = async (drink: CocktailDBDrink) => {
+  const handleImport = async (drink: Drink) => {
+    // Only CocktailDB drinks can be imported (IBA doesn't have an import endpoint yet)
+    if (source === "iba") {
+      showToast("IBA import coming soon", "error");
+      return;
+    }
     setImporting(drink.id);
     try {
       const res = await fetch(`/api/cocktaildb/import/${drink.id}`, { method: "POST" });
@@ -146,7 +182,7 @@ export function Browse() {
   };
 
   // Check if a drink can be made (all ingredients have stock with current_ml > 0)
-  const canMakeDrink = (drink: CocktailDBDrink): boolean => {
+  const canMakeDrink = (drink: Drink): boolean => {
     const ingredients = parseIngredients(drink.ingredients_json);
     if (ingredients.length === 0) return true; // No ingredients = can make
     return ingredients.every((ing) => {
@@ -156,9 +192,10 @@ export function Browse() {
   };
 
   // Toggle hidden status on a drink
-  const handleToggleHidden = async (drink: CocktailDBDrink) => {
+  const handleToggleHidden = async (drink: Drink) => {
     try {
-      const res = await fetch(`/api/cocktaildb/${drink.id}/toggle-hidden`, { method: "POST" });
+      const endpoint = source === "iba" ? `/api/iba/${drink.id}/toggle-hidden` : `/api/cocktaildb/${drink.id}/toggle-hidden`;
+      const res = await fetch(endpoint, { method: "POST" });
       if (res.ok) {
         const updated = await res.json();
         // Update drinks list
@@ -215,6 +252,8 @@ export function Browse() {
     }
   };
 
+  const currentCount = source === "iba" ? ibaCount : cocktaildbCount;
+
   return (
     <div className="page">
       <div className="header">
@@ -224,12 +263,30 @@ export function Browse() {
           onClick={handleSync}
           disabled={syncing}
         >
-          {syncing ? "Syncing..." : "Sync DB"}
+          {syncing ? "Syncing..." : "Sync"}
         </button>
       </div>
 
-      <p style={{ color: "var(--text-secondary)", marginBottom: "1rem" }}>
-        {count > 0 ? `${count} cocktails cached locally` : "No drinks cached yet. Click 'Sync DB' to fetch from CocktailDB."}
+      {/* Source tabs */}
+      <div className="tabs" style={{ marginBottom: "1rem" }}>
+        <button
+          className={`tab ${source === "iba" ? "active" : ""}`}
+          onClick={() => setSource("iba")}
+        >
+          IBA Official ({ibaCount})
+        </button>
+        <button
+          className={`tab ${source === "cocktaildb" ? "active" : ""}`}
+          onClick={() => setSource("cocktaildb")}
+        >
+          CocktailDB ({cocktaildbCount})
+        </button>
+      </div>
+
+      <p style={{ color: "var(--text-secondary)", marginBottom: "1rem", fontSize: "0.875rem" }}>
+        {currentCount > 0
+          ? `${currentCount} ${source === "iba" ? "IBA official" : "CocktailDB"} cocktails cached`
+          : `No drinks cached yet. Click 'Sync' to fetch from ${source === "iba" ? "IBA World" : "CocktailDB"}.`}
       </p>
 
       <div className="search-container">
@@ -247,7 +304,7 @@ export function Browse() {
           className="btn btn-secondary"
           style={{ flex: 1 }}
           onClick={handleRandom}
-          disabled={loading || count === 0}
+          disabled={loading || currentCount === 0}
         >
           🎲 Random
         </button>
@@ -315,7 +372,8 @@ export function Browse() {
                 <div className="badge" style={{ marginTop: "0.5rem" }}>{drink.category}</div>
               )}
             </div>
-          ))}
+          );
+        })}
         </div>
       )}
 
@@ -343,9 +401,14 @@ export function Browse() {
               />
             )}
             <h2 className="modal-title">{selectedDrink.name}</h2>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
               {selectedDrink.category && <div className="badge">{selectedDrink.category}</div>}
-              {selectedDrink.glass && <div className="badge">{selectedDrink.glass}</div>}
+              {selectedDrink.glass && (
+                <div className="badge" style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                  <span style={{ fontSize: "1rem" }}>{getGlassIcon(selectedDrink.glass)}</span>
+                  <span>{selectedDrink.glass}</span>
+                </div>
+              )}
             </div>
 
             <div style={{ marginTop: "1.5rem" }}>
@@ -422,7 +485,26 @@ export function Browse() {
               })}
             </div>
 
-            {selectedDrink.instructions && (
+            {/* IBA drinks have method + garnish, CocktailDB has instructions */}
+            {"method" in selectedDrink && selectedDrink.method && (
+              <div style={{ marginTop: "1.5rem" }}>
+                <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+                  METHOD
+                </h3>
+                <p style={{ lineHeight: 1.6 }}>{selectedDrink.method}</p>
+              </div>
+            )}
+
+            {"garnish" in selectedDrink && selectedDrink.garnish && (
+              <div style={{ marginTop: "1rem" }}>
+                <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+                  GARNISH
+                </h3>
+                <p style={{ lineHeight: 1.6 }}>{selectedDrink.garnish}</p>
+              </div>
+            )}
+
+            {"instructions" in selectedDrink && selectedDrink.instructions && (
               <div style={{ marginTop: "1.5rem" }}>
                 <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
                   INSTRUCTIONS

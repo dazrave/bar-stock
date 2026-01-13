@@ -9,6 +9,7 @@ import {
   passcodeQueries,
   cocktailDBQueries,
   shoppingQueries,
+  ibaQueries,
   type Stock,
   type ShoppingListItem,
 } from "./db";
@@ -365,6 +366,190 @@ app.post("/api/cocktaildb/:id/toggle-hidden", requireAuth(), (c) => {
     return c.json({ error: "Drink not found" }, 404);
   }
   return c.json(drink);
+});
+
+// ============ IBA COCKTAIL ROUTES ============
+
+app.get("/api/iba/search", requireAuth(true), (c) => {
+  const q = c.req.query("q") || "";
+  const drinks = ibaQueries.search.all(`%${q}%`);
+  return c.json(drinks);
+});
+
+app.get("/api/iba/random", requireAuth(true), (c) => {
+  const drink = ibaQueries.getRandom();
+  return c.json(drink);
+});
+
+app.get("/api/iba/count", requireAuth(true), (c) => {
+  const result = ibaQueries.getCount.get();
+  return c.json({ count: result?.count || 0 });
+});
+
+app.get("/api/iba/:id", requireAuth(true), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const drink = ibaQueries.getById.get(id);
+  if (!drink) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return c.json(drink);
+});
+
+app.post("/api/iba/:id/toggle-hidden", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const drink = ibaQueries.toggleHidden.get(id);
+  if (!drink) {
+    return c.json({ error: "Drink not found" }, 404);
+  }
+  return c.json(drink);
+});
+
+// Scrape IBA cocktails
+app.post("/api/iba/sync", requireAuth(), async (c) => {
+  const categories = [
+    { url: "https://iba-world.com/cocktails/the-unforgettables/", name: "The Unforgettables" },
+    { url: "https://iba-world.com/cocktails/the-contemporary/", name: "The Contemporary" },
+    { url: "https://iba-world.com/cocktails/the-new-era/", name: "The New Era" },
+  ];
+
+  // Get existing slugs to track new vs updated
+  const existingSlugs = new Set(ibaQueries.getAllSlugs.all().map((r) => r.slug));
+
+  let synced = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  // Helper to extract cocktail URLs from category page
+  const extractCocktailUrls = (html: string): string[] => {
+    const urls: string[] = [];
+    const regex = /href="(https:\/\/iba-world\.com\/iba-cocktail\/[^"]+)"/g;
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      if (!urls.includes(match[1])) {
+        urls.push(match[1]);
+      }
+    }
+    return urls;
+  };
+
+  // Helper to extract cocktail details from detail page
+  const extractCocktailDetails = (html: string, url: string, category: string) => {
+    const slug = url.split("/iba-cocktail/")[1]?.replace(/\/$/, "") || "";
+
+    // Extract name from title
+    const nameMatch = html.match(/<h1[^>]*class="[^"]*entry-title[^"]*"[^>]*>([^<]+)<\/h1>/i) ||
+                      html.match(/<title>([^|<]+)/i);
+    const name = nameMatch ? nameMatch[1].trim().replace(/ – IBA$/, "").replace(/ - IBA$/, "") : slug;
+
+    // Extract image URL
+    const imgMatch = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+\.(?:webp|jpg|jpeg|png))"/i);
+    const image_url = imgMatch ? imgMatch[1] : null;
+
+    // Extract glass type
+    const glassMatch = html.match(/(?:glass|Glass)[:\s]*([^<\n]+?)(?:<|\.|\n)/i) ||
+                       html.match(/<li[^>]*>([^<]*glass[^<]*)<\/li>/i);
+    let glass = glassMatch ? glassMatch[1].trim() : null;
+    if (glass) {
+      glass = glass.replace(/^[:\s]+/, "").replace(/[.\s]+$/, "");
+    }
+
+    // Extract garnish
+    const garnishMatch = html.match(/<h4[^>]*>\s*Garnish\s*<\/h4>\s*(?:<[^>]+>)*\s*([^<]+)/i) ||
+                         html.match(/Garnish[:\s]*"?([^"<\n]+)"?/i);
+    const garnish = garnishMatch ? garnishMatch[1].trim().replace(/^["']|["']$/g, "") : null;
+
+    // Extract method/instructions
+    const methodMatch = html.match(/<h4[^>]*>\s*Method\s*<\/h4>\s*(?:<[^>]+>)*\s*"?([^"<]+)"?/i) ||
+                        html.match(/Method[:\s]*"([^"]+)"/i);
+    const method = methodMatch ? methodMatch[1].trim().replace(/^["']|["']$/g, "") : null;
+
+    // Extract ingredients
+    const ingredients: Array<{ name: string; measure: string }> = [];
+    const ingredientSection = html.match(/<h4[^>]*>\s*Ingredients\s*<\/h4>\s*<ul[^>]*>([\s\S]*?)<\/ul>/i);
+    if (ingredientSection) {
+      const liRegex = /<li[^>]*>([^<]+)<\/li>/gi;
+      let liMatch;
+      while ((liMatch = liRegex.exec(ingredientSection[1])) !== null) {
+        const text = liMatch[1].trim();
+        // Parse "30 ml Gin" format
+        const measureMatch = text.match(/^([\d.]+\s*(?:ml|cl|oz|dash|dashes|drop|drops|tsp|tbsp|barspoon)?)\s+(.+)$/i);
+        if (measureMatch) {
+          ingredients.push({
+            measure: measureMatch[1].trim(),
+            name: measureMatch[2].trim(),
+          });
+        } else {
+          ingredients.push({ measure: "", name: text });
+        }
+      }
+    }
+
+    return {
+      slug,
+      name,
+      category,
+      glass,
+      garnish,
+      method,
+      image_url,
+      ingredients_json: JSON.stringify(ingredients),
+    };
+  };
+
+  // Process each category
+  for (const cat of categories) {
+    try {
+      const catRes = await fetch(cat.url);
+      if (!catRes.ok) {
+        errors.push(`Failed to fetch ${cat.name}: ${catRes.status}`);
+        continue;
+      }
+      const catHtml = await catRes.text();
+      const cocktailUrls = extractCocktailUrls(catHtml);
+
+      for (const url of cocktailUrls) {
+        try {
+          const slug = url.split("/iba-cocktail/")[1]?.replace(/\/$/, "") || "";
+
+          // Skip if we already have it
+          if (existingSlugs.has(slug)) {
+            skipped++;
+            continue;
+          }
+
+          // Small delay to be respectful
+          await new Promise((r) => setTimeout(r, 200));
+
+          const drinkRes = await fetch(url);
+          if (!drinkRes.ok) {
+            errors.push(`Failed to fetch ${url}: ${drinkRes.status}`);
+            continue;
+          }
+          const drinkHtml = await drinkRes.text();
+          const details = extractCocktailDetails(drinkHtml, url, cat.name);
+
+          ibaQueries.upsert.run(
+            details.slug,
+            details.name,
+            details.category,
+            details.glass,
+            details.garnish,
+            details.method,
+            details.image_url,
+            details.ingredients_json
+          );
+
+          synced++;
+        } catch (err) {
+          errors.push(`Error processing ${url}: ${err}`);
+        }
+      }
+    } catch (err) {
+      errors.push(`Error fetching category ${cat.name}: ${err}`);
+    }
+  }
+
+  return c.json({ synced, skipped, errors: errors.length > 0 ? errors : undefined });
 });
 
 // ============ SHOPPING LIST ROUTES ============
