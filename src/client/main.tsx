@@ -6,6 +6,9 @@ import { Login } from "./pages/Login";
 import { Stock } from "./pages/Stock";
 import { Drinks } from "./pages/Drinks";
 import { Menu } from "./pages/Menu";
+import { Menus } from "./pages/Menus";
+import { Queue } from "./pages/Queue";
+import { Kiosk } from "./pages/Kiosk";
 import { Settings } from "./pages/Settings";
 import { Browse } from "./pages/Browse";
 import { Shopping } from "./pages/Shopping";
@@ -96,6 +99,34 @@ function AppRoutes() {
             <App>
               <Settings />
             </App>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/menus"
+        element={
+          <ProtectedRoute ownerOnly>
+            <App>
+              <Menus />
+            </App>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/queue"
+        element={
+          <ProtectedRoute>
+            <App>
+              <Queue />
+            </App>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/kiosk"
+        element={
+          <ProtectedRoute>
+            <Kiosk />
           </ProtectedRoute>
         }
       />

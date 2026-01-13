@@ -10,8 +10,14 @@ import {
   cocktailDBQueries,
   shoppingQueries,
   ibaQueries,
+  menuQueries,
+  menuDrinkQueries,
+  requestQueries,
+  settingsQueries,
   type Stock,
   type ShoppingListItem,
+  type Menu,
+  type DrinkRequest,
 } from "./db";
 
 const app = new Hono();
@@ -83,15 +89,15 @@ app.get("/api/stock", requireAuth(true), (c) => {
 });
 
 app.post("/api/stock", requireAuth(), async (c) => {
-  const { name, category, current_ml, total_ml, image_path } = await c.req.json();
-  const stock = stockQueries.create.get(name, category || "Other", current_ml || 0, total_ml || 0, image_path || null);
+  const { name, category, current_ml, total_ml, image_path, unit_type } = await c.req.json();
+  const stock = stockQueries.create.get(name, category || "Other", current_ml || 0, total_ml || 0, image_path || null, unit_type || "ml");
   return c.json(stock, 201);
 });
 
 app.put("/api/stock/:id", requireAuth(), async (c) => {
   const id = parseInt(c.req.param("id"));
-  const { name, category, current_ml, total_ml, image_path } = await c.req.json();
-  const stock = stockQueries.update.get(name, category, current_ml, total_ml, image_path || null, id);
+  const { name, category, current_ml, total_ml, image_path, unit_type } = await c.req.json();
+  const stock = stockQueries.update.get(name, category, current_ml, total_ml, image_path || null, unit_type || "ml", id);
   if (!stock) {
     return c.json({ error: "Not found" }, 404);
   }
@@ -203,14 +209,19 @@ app.post("/api/drinks/:id/make", requireAuth(), (c) => {
     if (ing.stock_id && ing.amount_ml) {
       const stock = stockQueries.getById.get(ing.stock_id);
       if (stock) {
+        const amountUsed = Math.min(ing.amount_ml, stock.current_ml);
         const newAmount = Math.max(0, stock.current_ml - ing.amount_ml);
-        const updated = stockQueries.updateVolume.get(newAmount, ing.stock_id);
+        // Update current_ml and add to total_used_ml
+        const updated = stockQueries.updateVolumeAndUsed.get(newAmount, amountUsed, ing.stock_id);
         if (updated) updatedStock.push(updated);
       }
     }
   }
 
-  return c.json({ success: true, updatedStock });
+  // Increment times_made counter for the drink
+  const updatedDrink = drinkQueries.incrementTimesMade.get(id);
+
+  return c.json({ success: true, updatedStock, drink: updatedDrink });
 });
 
 // ============ SETTINGS ROUTES ============
@@ -404,6 +415,44 @@ app.post("/api/iba/:id/toggle-hidden", requireAuth(), (c) => {
   return c.json(drink);
 });
 
+// Import IBA drink to My Drinks
+app.post("/api/iba/import/:id", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const ibaDrink = ibaQueries.getById.get(id);
+
+  if (!ibaDrink) {
+    return c.json({ error: "Drink not found in cache" }, 404);
+  }
+
+  let ingredients: Array<{ name: string; measure: string }> = [];
+  try {
+    ingredients = JSON.parse(ibaDrink.ingredients_json || "[]");
+  } catch {}
+
+  const drink = drinkQueries.create.get(
+    ibaDrink.name,
+    ibaDrink.category || "Cocktail",
+    ibaDrink.method || null,
+    ibaDrink.image_url
+  );
+
+  if (drink) {
+    for (const ing of ingredients) {
+      ingredientQueries.create.run(
+        drink.id,
+        null,
+        ing.name,
+        null,
+        ing.measure || null,
+        0
+      );
+    }
+  }
+
+  const savedIngredients = drink ? ingredientQueries.getByDrinkId.all(drink.id) : [];
+  return c.json({ ...drink, ingredients: savedIngredients }, 201);
+});
+
 // Scrape IBA cocktails
 app.post("/api/iba/sync", requireAuth(), async (c) => {
   const categories = [
@@ -436,49 +485,121 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
   const extractCocktailDetails = (html: string, url: string, category: string) => {
     const slug = url.split("/iba-cocktail/")[1]?.replace(/\/$/, "") || "";
 
-    // Extract name from title
-    const nameMatch = html.match(/<h1[^>]*class="[^"]*entry-title[^"]*"[^>]*>([^<]+)<\/h1>/i) ||
-                      html.match(/<title>([^|<]+)/i);
-    const name = nameMatch ? nameMatch[1].trim().replace(/ – IBA$/, "").replace(/ - IBA$/, "") : slug;
-
-    // Extract image URL
-    const imgMatch = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+\.(?:webp|jpg|jpeg|png))"/i);
-    const image_url = imgMatch ? imgMatch[1] : null;
-
-    // Extract glass type
-    const glassMatch = html.match(/(?:glass|Glass)[:\s]*([^<\n]+?)(?:<|\.|\n)/i) ||
-                       html.match(/<li[^>]*>([^<]*glass[^<]*)<\/li>/i);
-    let glass = glassMatch ? glassMatch[1].trim() : null;
-    if (glass) {
-      glass = glass.replace(/^[:\s]+/, "").replace(/[.\s]+$/, "");
+    // Extract name from title - try multiple patterns
+    let name = slug;
+    const titleMatch = html.match(/<title>([^<|]+)/i);
+    if (titleMatch) {
+      name = titleMatch[1].trim().replace(/\s*[-–]\s*IBA.*$/i, "").trim();
+    }
+    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    if (h1Match) {
+      name = h1Match[1].trim();
     }
 
-    // Extract garnish
-    const garnishMatch = html.match(/<h4[^>]*>\s*Garnish\s*<\/h4>\s*(?:<[^>]+>)*\s*([^<]+)/i) ||
-                         html.match(/Garnish[:\s]*"?([^"<\n]+)"?/i);
-    const garnish = garnishMatch ? garnishMatch[1].trim().replace(/^["']|["']$/g, "") : null;
+    // Extract image URL - look for featured image or content image
+    let image_url: string | null = null;
+    // Try to find wp-content/uploads images
+    const imgMatches = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+)"/gi);
+    if (imgMatches) {
+      for (const match of imgMatches) {
+        const urlMatch = match.match(/src="([^"]+)"/);
+        if (urlMatch && urlMatch[1] && !urlMatch[1].includes('logo') && !urlMatch[1].includes('icon')) {
+          image_url = urlMatch[1];
+          break;
+        }
+      }
+    }
 
-    // Extract method/instructions
-    const methodMatch = html.match(/<h4[^>]*>\s*Method\s*<\/h4>\s*(?:<[^>]+>)*\s*"?([^"<]+)"?/i) ||
-                        html.match(/Method[:\s]*"([^"]+)"/i);
-    const method = methodMatch ? methodMatch[1].trim().replace(/^["']|["']$/g, "") : null;
+    // Extract glass type - look for "Glass:" or glass in a list
+    let glass: string | null = null;
+    const glassPatterns = [
+      /Glass\s*:\s*([^<\n]+)/i,
+      /served\s+in\s+(?:a\s+)?([^<.\n]+(?:glass|coupe|flute|mug|cup))/i,
+    ];
+    for (const pattern of glassPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        glass = match[1].trim().replace(/[.,]$/, "");
+        break;
+      }
+    }
 
-    // Extract ingredients
+    // Extract garnish - look for "Garnish:" section
+    let garnish: string | null = null;
+    const garnishPatterns = [
+      /Garnish\s*:?\s*<\/h\d>\s*<p>([^<]+)/i,
+      /Garnish\s*:\s*([^<\n]+)/i,
+      /<strong>Garnish<\/strong>\s*:?\s*([^<]+)/i,
+    ];
+    for (const pattern of garnishPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        garnish = match[1].trim().replace(/^["']|["']$/g, "").replace(/[.,]$/, "");
+        break;
+      }
+    }
+
+    // Extract method/instructions - collect all <p> tags after ingredients
+    let method: string | null = null;
+    const methodPatterns = [
+      /Method\s*:?\s*<\/h\d>\s*<p>([^<]+(?:<\/p>\s*<p>[^<]+)*)/i,
+      /Preparation\s*:?\s*<\/h\d>\s*<p>([^<]+)/i,
+      /Method\s*:\s*([^<\n]+)/i,
+    ];
+    for (const pattern of methodPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        method = match[1].replace(/<\/p>\s*<p>/g, " ").trim().replace(/^["']|["']$/g, "");
+        break;
+      }
+    }
+
+    // If no method found, look for paragraphs that describe preparation
+    if (!method) {
+      const prepMatch = html.match(/(?:shake|stir|pour|muddle|blend|build)[^<]{10,100}/i);
+      if (prepMatch) {
+        method = prepMatch[0].trim();
+      }
+    }
+
+    // Extract ingredients - look for <ul><li> patterns
     const ingredients: Array<{ name: string; measure: string }> = [];
-    const ingredientSection = html.match(/<h4[^>]*>\s*Ingredients\s*<\/h4>\s*<ul[^>]*>([\s\S]*?)<\/ul>/i);
-    if (ingredientSection) {
+
+    // Try to find ingredients section
+    const ingredientPatterns = [
+      /Ingredients?\s*:?\s*<\/h\d>\s*<ul[^>]*>([\s\S]*?)<\/ul>/i,
+      /<ul[^>]*class="[^"]*ingredients[^"]*"[^>]*>([\s\S]*?)<\/ul>/i,
+      /<ul[^>]*>([\s\S]*?)<\/ul>/i, // Fallback to first ul
+    ];
+
+    let ingredientHtml = "";
+    for (const pattern of ingredientPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        ingredientHtml = match[1];
+        // Check if this looks like ingredients (has measurements)
+        if (/\d+\s*(?:ml|cl|oz|dash)/i.test(ingredientHtml)) {
+          break;
+        }
+      }
+    }
+
+    if (ingredientHtml) {
       const liRegex = /<li[^>]*>([^<]+)<\/li>/gi;
       let liMatch;
-      while ((liMatch = liRegex.exec(ingredientSection[1])) !== null) {
+      while ((liMatch = liRegex.exec(ingredientHtml)) !== null) {
         const text = liMatch[1].trim();
-        // Parse "30 ml Gin" format
-        const measureMatch = text.match(/^([\d.]+\s*(?:ml|cl|oz|dash|dashes|drop|drops|tsp|tbsp|barspoon)?)\s+(.+)$/i);
+        if (!text) continue;
+
+        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Egg white"
+        const measureMatch = text.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|barspoons?|parts?)?)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({
             measure: measureMatch[1].trim(),
             name: measureMatch[2].trim(),
           });
         } else {
+          // Try to extract just the ingredient name
           ingredients.push({ measure: "", name: text });
         }
       }
@@ -778,6 +899,217 @@ app.post("/api/shopping/from-drink/:id", requireAuth(), async (c) => {
   return c.json({ added, drinkName: drink.name });
 });
 
+// ============ MENU ROUTES ============
+
+// Get all menus (owner sees all, guests see active only)
+app.get("/api/menus", requireAuth(true), (c) => {
+  const session = c.get("session");
+  const isOwner = session?.type === "owner";
+
+  const menus = isOwner ? menuQueries.getAll.all() : menuQueries.getActive.all();
+
+  // Get drinks for each menu with availability info
+  const menusWithDrinks = menus.map((menu) => {
+    const drinks = menuDrinkQueries.getDrinksForMenu.all(menu.id);
+    const allStock = stockQueries.getAll.all();
+
+    const drinksWithAvailability = drinks.map((drink) => {
+      const ingredients = ingredientQueries.getByDrinkId.all(drink.id);
+      let canMake = true;
+      let minServings = Infinity;
+
+      for (const ing of ingredients) {
+        if (ing.stock_id && ing.amount_ml) {
+          const stock = allStock.find((s) => s.id === ing.stock_id);
+          if (!stock || stock.current_ml <= 0) {
+            canMake = false;
+            minServings = 0;
+          } else if (canMake) {
+            const servings = Math.floor(stock.current_ml / ing.amount_ml);
+            minServings = Math.min(minServings, servings);
+          }
+        } else if (!ing.stock_id) {
+          // Ingredient not linked to stock - can't make
+          canMake = false;
+          minServings = 0;
+        }
+      }
+
+      return {
+        ...drink,
+        canMake,
+        servingsLeft: canMake ? (minServings === Infinity ? 99 : minServings) : 0,
+      };
+    });
+
+    return {
+      ...menu,
+      drinks: drinksWithAvailability,
+    };
+  });
+
+  return c.json(menusWithDrinks);
+});
+
+// Create a menu
+app.post("/api/menus", requireAuth(), async (c) => {
+  const { name, description } = await c.req.json();
+  const menu = menuQueries.create.get(name, description || null);
+  return c.json(menu, 201);
+});
+
+// Update a menu
+app.put("/api/menus/:id", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const { name, description, active, sort_order } = await c.req.json();
+  const menu = menuQueries.update.get(name, description || null, active ? 1 : 0, sort_order || 0, id);
+  if (!menu) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return c.json(menu);
+});
+
+// Toggle menu active status
+app.post("/api/menus/:id/toggle-active", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const menu = menuQueries.toggleActive.get(id);
+  if (!menu) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return c.json(menu);
+});
+
+// Delete a menu
+app.delete("/api/menus/:id", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  menuQueries.delete.run(id);
+  return c.json({ success: true });
+});
+
+// Add drink to menu
+app.post("/api/menus/:menuId/drinks/:drinkId", requireAuth(), (c) => {
+  const menuId = parseInt(c.req.param("menuId"));
+  const drinkId = parseInt(c.req.param("drinkId"));
+  const result = menuDrinkQueries.add.get(menuId, drinkId);
+  return c.json(result || { success: true });
+});
+
+// Remove drink from menu
+app.delete("/api/menus/:menuId/drinks/:drinkId", requireAuth(), (c) => {
+  const menuId = parseInt(c.req.param("menuId"));
+  const drinkId = parseInt(c.req.param("drinkId"));
+  menuDrinkQueries.remove.run(menuId, drinkId);
+  return c.json({ success: true });
+});
+
+// Toggle drink hidden on menu
+app.post("/api/menus/:menuId/drinks/:drinkId/toggle-hidden", requireAuth(), (c) => {
+  const menuId = parseInt(c.req.param("menuId"));
+  const drinkId = parseInt(c.req.param("drinkId"));
+  const result = menuDrinkQueries.toggleHidden.get(menuId, drinkId);
+  return c.json(result || { success: true });
+});
+
+// ============ QUEUE (DRINK REQUEST) ROUTES ============
+
+// Get queue status (bar open/closed)
+app.get("/api/queue/status", requireAuth(true), (c) => {
+  const setting = settingsQueries.get.get("bar_open");
+  const pendingCount = requestQueries.getPendingCount.get();
+  return c.json({
+    barOpen: setting?.value !== "false",
+    pendingCount: pendingCount?.count || 0,
+  });
+});
+
+// Set queue status (bar open/closed)
+app.post("/api/queue/status", requireAuth(), async (c) => {
+  const { barOpen } = await c.req.json();
+  settingsQueries.set.get("bar_open", barOpen ? "true" : "false");
+  return c.json({ barOpen });
+});
+
+// Get all pending requests
+app.get("/api/queue", requireAuth(true), (c) => {
+  const requests = requestQueries.getPending.all();
+  return c.json(requests);
+});
+
+// Create a new drink request (guests can do this)
+app.post("/api/queue/request", requireAuth(true), async (c) => {
+  // Check if bar is open
+  const setting = settingsQueries.get.get("bar_open");
+  if (setting?.value === "false") {
+    return c.json({ error: "Bar is closed" }, 400);
+  }
+
+  const { drinkId, guestName } = await c.req.json();
+  if (!drinkId || !guestName) {
+    return c.json({ error: "Missing drinkId or guestName" }, 400);
+  }
+
+  const request = requestQueries.create.get(drinkId, guestName);
+  return c.json(request, 201);
+});
+
+// Mark request as "making"
+app.post("/api/queue/:id/making", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const request = requestQueries.markMaking.get(id);
+  if (!request) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return c.json(request);
+});
+
+// Mark request as "done" (auto-deducts stock)
+app.post("/api/queue/:id/done", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const request = requestQueries.getById.get(id);
+  if (!request) {
+    return c.json({ error: "Not found" }, 404);
+  }
+
+  // Deduct stock
+  const ingredients = ingredientQueries.getByDrinkId.all(request.drink_id);
+  const updatedStock: Stock[] = [];
+
+  for (const ing of ingredients) {
+    if (ing.stock_id && ing.amount_ml) {
+      const stock = stockQueries.getById.get(ing.stock_id);
+      if (stock) {
+        const amountUsed = Math.min(ing.amount_ml, stock.current_ml);
+        const newAmount = Math.max(0, stock.current_ml - ing.amount_ml);
+        const updated = stockQueries.updateVolumeAndUsed.get(newAmount, amountUsed, ing.stock_id);
+        if (updated) updatedStock.push(updated);
+      }
+    }
+  }
+
+  // Increment times_made
+  drinkQueries.incrementTimesMade.get(request.drink_id);
+
+  // Mark as done
+  const updatedRequest = requestQueries.markDone.get(id);
+  return c.json({ request: updatedRequest, updatedStock });
+});
+
+// Mark request as "declined"
+app.post("/api/queue/:id/decline", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const request = requestQueries.markDeclined.get(id);
+  if (!request) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return c.json(request);
+});
+
+// Clear completed requests
+app.post("/api/queue/clear-completed", requireAuth(), (c) => {
+  requestQueries.clearCompleted.run();
+  return c.json({ success: true });
+});
+
 // ============ UPLOAD ROUTES ============
 
 app.post("/api/upload", requireAuth(), async (c) => {
@@ -828,6 +1160,9 @@ const server = Bun.serve({
     "/drinks": homepage,
     "/browse": homepage,
     "/menu": homepage,
+    "/menus": homepage,
+    "/queue": homepage,
+    "/kiosk": homepage,
     "/settings": homepage,
     "/shopping": homepage,
   },

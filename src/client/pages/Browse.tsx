@@ -141,14 +141,10 @@ export function Browse() {
   };
 
   const handleImport = async (drink: Drink) => {
-    // Only CocktailDB drinks can be imported (IBA doesn't have an import endpoint yet)
-    if (source === "iba") {
-      showToast("IBA import coming soon", "error");
-      return;
-    }
     setImporting(drink.id);
     try {
-      const res = await fetch(`/api/cocktaildb/import/${drink.id}`, { method: "POST" });
+      const endpoint = source === "iba" ? `/api/iba/import/${drink.id}` : `/api/cocktaildb/import/${drink.id}`;
+      const res = await fetch(endpoint, { method: "POST" });
       if (res.ok) {
         showToast(`${drink.name} added to your drinks!`);
         setSelectedDrink(null);

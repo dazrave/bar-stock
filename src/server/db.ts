@@ -102,6 +102,41 @@ db.exec(`
     hidden INTEGER DEFAULT 0,
     scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS menus (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    active INTEGER DEFAULT 1,
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS menu_drinks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    menu_id INTEGER NOT NULL,
+    drink_id INTEGER NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    hidden INTEGER DEFAULT 0,
+    FOREIGN KEY (menu_id) REFERENCES menus(id) ON DELETE CASCADE,
+    FOREIGN KEY (drink_id) REFERENCES drinks(id) ON DELETE CASCADE,
+    UNIQUE(menu_id, drink_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS drink_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    drink_id INTEGER NOT NULL,
+    guest_name TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME,
+    FOREIGN KEY (drink_id) REFERENCES drinks(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 // Insert default passcodes if none exist
@@ -141,6 +176,30 @@ try {
   // Column already exists
 }
 
+// Add times_made column to drinks table (migration)
+try {
+  db.run("ALTER TABLE drinks ADD COLUMN times_made INTEGER DEFAULT 0");
+  console.log("Added times_made column to drinks");
+} catch {
+  // Column already exists
+}
+
+// Add total_used_ml column to stock table (migration)
+try {
+  db.run("ALTER TABLE stock ADD COLUMN total_used_ml INTEGER DEFAULT 0");
+  console.log("Added total_used_ml column to stock");
+} catch {
+  // Column already exists
+}
+
+// Add unit_type column to stock table (migration) - "ml" or "count"
+try {
+  db.run("ALTER TABLE stock ADD COLUMN unit_type TEXT DEFAULT 'ml'");
+  console.log("Added unit_type column to stock");
+} catch {
+  // Column already exists
+}
+
 // Types
 export interface Stock {
   id: number;
@@ -148,6 +207,8 @@ export interface Stock {
   category: string;
   current_ml: number;
   total_ml: number;
+  total_used_ml: number;
+  unit_type: "ml" | "count";
   image_path: string | null;
   created_at: string;
 }
@@ -158,6 +219,7 @@ export interface Drink {
   category: string;
   instructions: string | null;
   image_path: string | null;
+  times_made: number;
   created_at: string;
 }
 
@@ -226,18 +288,52 @@ export interface ShoppingListDrinkInfo {
   name: string;
 }
 
+export interface Menu {
+  id: number;
+  name: string;
+  description: string | null;
+  active: number;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface MenuDrink {
+  id: number;
+  menu_id: number;
+  drink_id: number;
+  sort_order: number;
+  hidden: number;
+}
+
+export interface DrinkRequest {
+  id: number;
+  drink_id: number;
+  guest_name: string;
+  status: string;
+  requested_at: string;
+  completed_at: string | null;
+}
+
+export interface AppSetting {
+  key: string;
+  value: string;
+}
+
 // Stock queries
 export const stockQueries = {
   getAll: db.query<Stock, []>("SELECT * FROM stock ORDER BY category, name"),
   getById: db.query<Stock, [number]>("SELECT * FROM stock WHERE id = ?"),
-  create: db.query<Stock, [string, string, number, number, string | null]>(
-    "INSERT INTO stock (name, category, current_ml, total_ml, image_path) VALUES (?, ?, ?, ?, ?) RETURNING *"
+  create: db.query<Stock, [string, string, number, number, string | null, string]>(
+    "INSERT INTO stock (name, category, current_ml, total_ml, image_path, unit_type) VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
   ),
-  update: db.query<Stock, [string, string, number, number, string | null, number]>(
-    "UPDATE stock SET name = ?, category = ?, current_ml = ?, total_ml = ?, image_path = ? WHERE id = ? RETURNING *"
+  update: db.query<Stock, [string, string, number, number, string | null, string, number]>(
+    "UPDATE stock SET name = ?, category = ?, current_ml = ?, total_ml = ?, image_path = ?, unit_type = ? WHERE id = ? RETURNING *"
   ),
   updateVolume: db.query<Stock, [number, number]>(
     "UPDATE stock SET current_ml = ? WHERE id = ? RETURNING *"
+  ),
+  updateVolumeAndUsed: db.query<Stock, [number, number, number]>(
+    "UPDATE stock SET current_ml = ?, total_used_ml = total_used_ml + ? WHERE id = ? RETURNING *"
   ),
   delete: db.query<null, [number]>("DELETE FROM stock WHERE id = ?"),
 };
@@ -253,6 +349,9 @@ export const drinkQueries = {
     "UPDATE drinks SET name = ?, category = ?, instructions = ?, image_path = ? WHERE id = ? RETURNING *"
   ),
   delete: db.query<null, [number]>("DELETE FROM drinks WHERE id = ?"),
+  incrementTimesMade: db.query<Drink, [number]>(
+    "UPDATE drinks SET times_made = times_made + 1 WHERE id = ? RETURNING *"
+  ),
 };
 
 // Drink ingredient queries
@@ -400,6 +499,98 @@ export const ibaQueries = {
   toggleHidden: db.query<IBADrink, [number]>(
     "UPDATE iba_drinks SET hidden = NOT hidden WHERE id = ? RETURNING *"
   ),
+};
+
+// Menu queries
+export const menuQueries = {
+  getAll: db.query<Menu, []>("SELECT * FROM menus ORDER BY sort_order, name"),
+  getActive: db.query<Menu, []>("SELECT * FROM menus WHERE active = 1 ORDER BY sort_order, name"),
+  getById: db.query<Menu, [number]>("SELECT * FROM menus WHERE id = ?"),
+  create: db.query<Menu, [string, string | null]>(
+    "INSERT INTO menus (name, description) VALUES (?, ?) RETURNING *"
+  ),
+  update: db.query<Menu, [string, string | null, number, number, number]>(
+    "UPDATE menus SET name = ?, description = ?, active = ?, sort_order = ? WHERE id = ? RETURNING *"
+  ),
+  toggleActive: db.query<Menu, [number]>(
+    "UPDATE menus SET active = NOT active WHERE id = ? RETURNING *"
+  ),
+  delete: db.query<null, [number]>("DELETE FROM menus WHERE id = ?"),
+};
+
+// Menu drinks queries
+export const menuDrinkQueries = {
+  getByMenuId: db.query<MenuDrink, [number]>(
+    "SELECT * FROM menu_drinks WHERE menu_id = ? ORDER BY sort_order"
+  ),
+  getDrinksForMenu: db.query<Drink & { menu_drink_id: number; menu_hidden: number }, [number]>(`
+    SELECT d.*, md.id as menu_drink_id, md.hidden as menu_hidden
+    FROM menu_drinks md
+    JOIN drinks d ON d.id = md.drink_id
+    WHERE md.menu_id = ?
+    ORDER BY md.sort_order, d.name
+  `),
+  add: db.query<MenuDrink, [number, number]>(
+    "INSERT OR IGNORE INTO menu_drinks (menu_id, drink_id) VALUES (?, ?) RETURNING *"
+  ),
+  remove: db.query<null, [number, number]>(
+    "DELETE FROM menu_drinks WHERE menu_id = ? AND drink_id = ?"
+  ),
+  toggleHidden: db.query<MenuDrink, [number, number]>(
+    "UPDATE menu_drinks SET hidden = NOT hidden WHERE menu_id = ? AND drink_id = ? RETURNING *"
+  ),
+  updateOrder: db.query<MenuDrink, [number, number, number]>(
+    "UPDATE menu_drinks SET sort_order = ? WHERE menu_id = ? AND drink_id = ? RETURNING *"
+  ),
+};
+
+// Drink request queries (queue)
+export const requestQueries = {
+  getAll: db.query<DrinkRequest & { drink_name: string; drink_image: string | null }, []>(`
+    SELECT dr.*, d.name as drink_name, d.image_path as drink_image
+    FROM drink_requests dr
+    JOIN drinks d ON d.id = dr.drink_id
+    ORDER BY dr.requested_at DESC
+  `),
+  getPending: db.query<DrinkRequest & { drink_name: string; drink_image: string | null }, []>(`
+    SELECT dr.*, d.name as drink_name, d.image_path as drink_image
+    FROM drink_requests dr
+    JOIN drinks d ON d.id = dr.drink_id
+    WHERE dr.status IN ('pending', 'making')
+    ORDER BY dr.requested_at ASC
+  `),
+  getPendingCount: db.query<{ count: number }, []>(
+    "SELECT COUNT(*) as count FROM drink_requests WHERE status = 'pending'"
+  ),
+  getById: db.query<DrinkRequest, [number]>("SELECT * FROM drink_requests WHERE id = ?"),
+  create: db.query<DrinkRequest, [number, string]>(
+    "INSERT INTO drink_requests (drink_id, guest_name) VALUES (?, ?) RETURNING *"
+  ),
+  updateStatus: db.query<DrinkRequest, [string, number]>(
+    "UPDATE drink_requests SET status = ?, completed_at = CASE WHEN ? IN ('done', 'declined') THEN CURRENT_TIMESTAMP ELSE completed_at END WHERE id = ? RETURNING *"
+  ),
+  markMaking: db.query<DrinkRequest, [number]>(
+    "UPDATE drink_requests SET status = 'making' WHERE id = ? RETURNING *"
+  ),
+  markDone: db.query<DrinkRequest, [number]>(
+    "UPDATE drink_requests SET status = 'done', completed_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *"
+  ),
+  markDeclined: db.query<DrinkRequest, [number]>(
+    "UPDATE drink_requests SET status = 'declined', completed_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING *"
+  ),
+  delete: db.query<null, [number]>("DELETE FROM drink_requests WHERE id = ?"),
+  clearCompleted: db.query<null, []>(
+    "DELETE FROM drink_requests WHERE status IN ('done', 'declined')"
+  ),
+};
+
+// App settings queries
+export const settingsQueries = {
+  get: db.query<AppSetting, [string]>("SELECT * FROM app_settings WHERE key = ?"),
+  set: db.query<AppSetting, [string, string]>(
+    "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value RETURNING *"
+  ),
+  delete: db.query<null, [string]>("DELETE FROM app_settings WHERE key = ?"),
 };
 
 export { db };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Bottle } from "../components/Bottle";
 import { useToast } from "../context/ToastContext";
 import { parseVolume, formatVolume } from "../utils/volume";
+import { suggestCategory, STOCK_CATEGORIES } from "../utils/categoryMapping";
 
 interface StockItem {
   id: number;
@@ -9,10 +10,12 @@ interface StockItem {
   category: string;
   current_ml: number;
   total_ml: number;
+  total_used_ml: number;
+  unit_type: "ml" | "count";
   image_path: string | null;
 }
 
-const CATEGORIES = ["Spirits", "Liqueurs", "Mixers", "Wine", "Beer", "Other"];
+const CATEGORIES = STOCK_CATEGORIES;
 
 export function Stock() {
   const [stock, setStock] = useState<StockItem[]>([]);
@@ -31,6 +34,7 @@ export function Stock() {
     category: "Spirits",
     total_input: "700ml",
     current_input: "700ml",
+    unit_type: "ml" as "ml" | "count",
   });
 
   useEffect(() => {
@@ -56,7 +60,7 @@ export function Stock() {
 
   const handleAdd = () => {
     setEditingItem(null);
-    setFormData({ name: "", category: "Spirits", total_input: "700ml", current_input: "700ml" });
+    setFormData({ name: "", category: "Spirits", total_input: "700ml", current_input: "700ml", unit_type: "ml" });
     setShowModal(true);
   };
 
@@ -65,23 +69,41 @@ export function Stock() {
     setFormData({
       name: item.name,
       category: item.category,
-      total_input: `${item.total_ml}ml`,
-      current_input: `${item.current_ml}ml`,
+      total_input: item.unit_type === "count" ? `${item.total_ml}` : `${item.total_ml}ml`,
+      current_input: item.unit_type === "count" ? `${item.current_ml}` : `${item.current_ml}ml`,
+      unit_type: item.unit_type || "ml",
     });
     setShowModal(true);
   };
 
   const handleSave = async () => {
-    const total_ml = parseVolume(formData.total_input);
-    if (!total_ml || total_ml <= 0) {
-      showToast("Invalid bottle size", "error");
-      return;
-    }
+    let total_ml: number;
+    let current_ml: number | null;
 
-    const current_ml = parseVolume(formData.current_input, total_ml);
-    if (current_ml === null || current_ml < 0) {
-      showToast("Invalid current amount", "error");
-      return;
+    if (formData.unit_type === "count") {
+      // For count-based items, parse as plain integers
+      total_ml = parseInt(formData.total_input) || 0;
+      current_ml = parseInt(formData.current_input) || 0;
+      if (total_ml <= 0) {
+        showToast("Invalid total count", "error");
+        return;
+      }
+      if (current_ml < 0) {
+        showToast("Invalid current count", "error");
+        return;
+      }
+    } else {
+      // For ml-based items, use volume parser
+      total_ml = parseVolume(formData.total_input) || 0;
+      if (total_ml <= 0) {
+        showToast("Invalid bottle size", "error");
+        return;
+      }
+      current_ml = parseVolume(formData.current_input, total_ml);
+      if (current_ml === null || current_ml < 0) {
+        showToast("Invalid current amount", "error");
+        return;
+      }
     }
 
     const payload = {
@@ -89,6 +111,7 @@ export function Stock() {
       category: formData.category,
       total_ml,
       current_ml: Math.min(current_ml, total_ml),
+      unit_type: formData.unit_type,
     };
 
     try {
@@ -161,14 +184,28 @@ export function Stock() {
   // Quick edit - tap percentage to enter a value like "50%" or "350ml"
   const handleQuickEdit = (item: StockItem) => {
     setQuickEditId(item.id);
-    setQuickEditValue(`${Math.round((item.current_ml / item.total_ml) * 100)}%`);
+    if (item.unit_type === "count") {
+      setQuickEditValue(`${item.current_ml}`);
+    } else {
+      setQuickEditValue(`${Math.round((item.current_ml / item.total_ml) * 100)}%`);
+    }
   };
 
   const handleQuickEditSave = async (item: StockItem) => {
-    const newMl = parseVolume(quickEditValue, item.total_ml);
-    if (newMl === null || newMl < 0) {
-      showToast("Invalid amount (try 50%, 350ml, 12oz)", "error");
-      return;
+    let newMl: number | null;
+
+    if (item.unit_type === "count") {
+      newMl = parseInt(quickEditValue);
+      if (isNaN(newMl) || newMl < 0) {
+        showToast("Invalid count", "error");
+        return;
+      }
+    } else {
+      newMl = parseVolume(quickEditValue, item.total_ml);
+      if (newMl === null || newMl < 0) {
+        showToast("Invalid amount (try 50%, 350ml, 12oz)", "error");
+        return;
+      }
     }
 
     try {
@@ -188,6 +225,12 @@ export function Stock() {
 
   const filteredStock = filter === "All" ? stock : stock.filter((s) => s.category === filter);
   const categories = ["All", ...CATEGORIES];
+
+  // Calculate category counts
+  const categoryCounts = categories.reduce((acc, cat) => {
+    acc[cat] = cat === "All" ? stock.length : stock.filter((s) => s.category === cat).length;
+    return acc;
+  }, {} as Record<string, number>);
 
   if (loading) {
     return (
@@ -214,6 +257,9 @@ export function Stock() {
             onClick={() => setFilter(cat)}
           >
             {cat}
+            {categoryCounts[cat] > 0 && (
+              <span className="tab-count">{categoryCounts[cat]}</span>
+            )}
           </button>
         ))}
       </div>
@@ -236,13 +282,20 @@ export function Stock() {
                   <div className="stock-name">{item.name}</div>
                   <div className="stock-category">{item.category}</div>
                   <div style={{ fontSize: "0.875rem", marginTop: "0.25rem", color: "var(--text-secondary)" }}>
-                    {formatVolume(item.current_ml)} / {formatVolume(item.total_ml)}
+                    {item.unit_type === "count"
+                      ? `${item.current_ml} / ${item.total_ml} remaining`
+                      : `${formatVolume(item.current_ml)} / ${formatVolume(item.total_ml)}`}
                   </div>
+                  {item.total_used_ml > 0 && (
+                    <div style={{ fontSize: "0.75rem", marginTop: "0.25rem", color: "var(--success)" }}>
+                      Used: {item.unit_type === "count" ? item.total_used_ml : formatVolume(item.total_used_ml)} all time
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="volume-controls" style={{ marginTop: "1rem" }}>
-                <button className="volume-btn" onClick={() => handleVolumeChange(item, -30)}>
+                <button className="volume-btn" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>
                   −
                 </button>
                 {quickEditId === item.id ? (
@@ -254,19 +307,21 @@ export function Stock() {
                     onBlur={() => handleQuickEditSave(item)}
                     onKeyDown={(e) => e.key === "Enter" && handleQuickEditSave(item)}
                     autoFocus
-                    placeholder="50%"
+                    placeholder={item.unit_type === "count" ? "5" : "50%"}
                   />
                 ) : (
                   <div
                     className="volume-display"
                     onClick={() => handleQuickEdit(item)}
                     style={{ cursor: "pointer", textDecoration: "underline dotted" }}
-                    title="Tap to edit (50%, 350ml, 35cl)"
+                    title={item.unit_type === "count" ? "Tap to edit count" : "Tap to edit (50%, 350ml, 35cl)"}
                   >
-                    {Math.round((item.current_ml / item.total_ml) * 100)}%
+                    {item.unit_type === "count"
+                      ? item.current_ml
+                      : `${Math.round((item.current_ml / item.total_ml) * 100)}%`}
                   </div>
                 )}
-                <button className="volume-btn" onClick={() => handleVolumeChange(item, 30)}>
+                <button className="volume-btn" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>
                   +
                 </button>
               </div>
@@ -309,7 +364,16 @@ export function Stock() {
                 list="ingredient-suggestions"
                 placeholder="e.g. Absolut Vodka"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) => {
+                  const newName = e.target.value;
+                  const suggestedCat = suggestCategory(newName);
+                  setFormData({
+                    ...formData,
+                    name: newName,
+                    // Auto-fill category only if not editing and we have a suggestion
+                    ...(suggestedCat && !editingItem ? { category: suggestedCat } : {}),
+                  });
+                }}
               />
               <datalist id="ingredient-suggestions">
                 {ingredientSuggestions.map((name) => (
@@ -334,29 +398,58 @@ export function Stock() {
             </div>
 
             <div className="form-group">
-              <label className="label">Bottle Size</label>
-              <input
-                className="input"
-                placeholder="700ml, 70cl, 25oz"
-                value={formData.total_input}
-                onChange={(e) => setFormData({ ...formData, total_input: e.target.value })}
-              />
+              <label className="label">Type</label>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  className={`btn ${formData.unit_type === "ml" ? "btn-primary" : "btn-secondary"}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setFormData({ ...formData, unit_type: "ml", total_input: "700ml", current_input: "700ml" })}
+                >
+                  Liquid (ml)
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${formData.unit_type === "count" ? "btn-primary" : "btn-secondary"}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setFormData({ ...formData, unit_type: "count", total_input: "10", current_input: "10" })}
+                >
+                  Count
+                </button>
+              </div>
               <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                Accepts: 700ml, 70cl, 25oz, or just 700
+                Use Count for items like eggs, limes, cherries, etc.
               </div>
             </div>
 
             <div className="form-group">
-              <label className="label">Current Amount</label>
+              <label className="label">{formData.unit_type === "count" ? "Total Count" : "Bottle Size"}</label>
               <input
                 className="input"
-                placeholder="50%, 350ml, 12oz"
+                placeholder={formData.unit_type === "count" ? "e.g. 12" : "700ml, 70cl, 25oz"}
+                value={formData.total_input}
+                onChange={(e) => setFormData({ ...formData, total_input: e.target.value })}
+              />
+              {formData.unit_type === "ml" && (
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                  Accepts: 700ml, 70cl, 25oz, or just 700
+                </div>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label className="label">{formData.unit_type === "count" ? "Current Count" : "Current Amount"}</label>
+              <input
+                className="input"
+                placeholder={formData.unit_type === "count" ? "e.g. 8" : "50%, 350ml, 12oz"}
                 value={formData.current_input}
                 onChange={(e) => setFormData({ ...formData, current_input: e.target.value })}
               />
-              <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                Accepts: 50% (of bottle), 350ml, 35cl, or 12oz
-              </div>
+              {formData.unit_type === "ml" && (
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                  Accepts: 50% (of bottle), 350ml, 35cl, or 12oz
+                </div>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem" }}>

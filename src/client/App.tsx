@@ -32,9 +32,13 @@ export function App({ children }: AppProps) {
               <span className="nav-icon">🔍</span>
               <span>Browse</span>
             </NavLink>
-            <NavLink to="/menu" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+            <NavLink to="/menus" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
               <span className="nav-icon">📋</span>
-              <span>Menu</span>
+              <span>Menus</span>
+            </NavLink>
+            <NavLink to="/queue" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+              <span className="nav-icon">📝</span>
+              <span>Queue</span>
             </NavLink>
             <NavLink to="/settings" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
               <span className="nav-icon">⚙️</span>
@@ -42,10 +46,16 @@ export function App({ children }: AppProps) {
             </NavLink>
           </>
         ) : (
-          <NavLink to="/menu" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
-            <span className="nav-icon">📋</span>
-            <span>Menu</span>
-          </NavLink>
+          <>
+            <NavLink to="/menu" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+              <span className="nav-icon">📋</span>
+              <span>Menu</span>
+            </NavLink>
+            <NavLink to="/queue" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
+              <span className="nav-icon">📝</span>
+              <span>Queue</span>
+            </NavLink>
+          </>
         )}
       </nav>
     </>

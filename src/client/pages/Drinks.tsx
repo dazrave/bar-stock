@@ -17,6 +17,7 @@ interface DrinkItem {
   category: string;
   instructions: string | null;
   image_path: string | null;
+  times_made: number;
   ingredients: Ingredient[];
 }
 
@@ -144,6 +145,12 @@ export function Drinks() {
           })
         );
       }
+      // Update the drink's times_made in local state
+      if (data.drink) {
+        setDrinks((prev) =>
+          prev.map((d) => (d.id === drink.id ? { ...d, times_made: data.drink.times_made } : d))
+        );
+      }
       showToast(`Made ${drink.name}! Enjoy! 🍸`);
     } catch (err) {
       showToast("Failed to update stock", "error");
@@ -199,6 +206,12 @@ export function Drinks() {
   const filteredDrinks = filter === "All" ? drinks : drinks.filter((d) => d.category === filter);
   const categories = ["All", ...DRINK_CATEGORIES];
 
+  // Calculate category counts
+  const categoryCounts = categories.reduce((acc, cat) => {
+    acc[cat] = cat === "All" ? drinks.length : drinks.filter((d) => d.category === cat).length;
+    return acc;
+  }, {} as Record<string, number>);
+
   if (loading) {
     return (
       <div className="page" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -224,6 +237,9 @@ export function Drinks() {
             onClick={() => setFilter(cat)}
           >
             {cat}
+            {categoryCounts[cat] > 0 && (
+              <span className="tab-count">{categoryCounts[cat]}</span>
+            )}
           </button>
         ))}
       </div>
@@ -249,7 +265,12 @@ export function Drinks() {
                 />
               )}
               <div style={{ fontWeight: 600, fontSize: "1.125rem" }}>{drink.name}</div>
-              <div className="badge" style={{ marginTop: "0.5rem" }}>{drink.category}</div>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                <div className="badge">{drink.category}</div>
+                {drink.times_made > 0 && (
+                  <div className="badge badge-success">Made {drink.times_made}x</div>
+                )}
+              </div>
 
               {drink.ingredients.length > 0 && (
                 <div style={{ marginTop: "0.75rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
