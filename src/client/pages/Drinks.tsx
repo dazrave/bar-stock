@@ -81,7 +81,8 @@ export function Drinks() {
   const [drinks, setDrinks] = useState<DrinkItem[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedDrink, setSelectedDrink] = useState<DrinkItem | null>(null);
   const [editingDrink, setEditingDrink] = useState<DrinkItem | null>(null);
   const [filter, setFilter] = useState("All");
   const [makingDrink, setMakingDrink] = useState<number | null>(null);
@@ -111,34 +112,29 @@ export function Drinks() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Check if ingredient has enough stock
+  const hasEnoughStock = (ing: Ingredient): boolean => {
+    if (!ing.stock_id) return false;
+    const stockItem = stock.find((s) => s.id === ing.stock_id);
+    if (!stockItem) return false;
+    if (ing.amount_ml && ing.amount_ml > 0) {
+      return stockItem.current_ml >= ing.amount_ml;
+    }
+    return stockItem.current_ml > 0;
+  };
+
   // Check if we can make a drink (all required ingredients in stock with enough quantity)
   const canMakeDrink = (drink: DrinkItem): boolean => {
     const requiredIngredients = drink.ingredients.filter((ing) => !ing.optional);
     if (requiredIngredients.length === 0) return true;
-
-    return requiredIngredients.every((ing) => {
-      if (!ing.stock_id) return false;
-      const stockItem = stock.find((s) => s.id === ing.stock_id);
-      if (!stockItem) return false;
-      // Check if we have enough - if amount_ml specified, check quantity, otherwise just check if > 0
-      if (ing.amount_ml && ing.amount_ml > 0) {
-        return stockItem.current_ml >= ing.amount_ml;
-      }
-      return stockItem.current_ml > 0;
-    });
+    return requiredIngredients.every((ing) => hasEnoughStock(ing));
   };
 
   // Count missing ingredients for a drink
   const getMissingCount = (drink: DrinkItem): number => {
     return drink.ingredients.filter((ing) => {
       if (ing.optional) return false;
-      if (!ing.stock_id) return true;
-      const stockItem = stock.find((s) => s.id === ing.stock_id);
-      if (!stockItem) return true;
-      if (ing.amount_ml && ing.amount_ml > 0) {
-        return stockItem.current_ml < ing.amount_ml;
-      }
-      return stockItem.current_ml <= 0;
+      return !hasEnoughStock(ing);
     }).length;
   };
 
@@ -151,7 +147,7 @@ export function Drinks() {
       image_path: "",
       ingredients: [{ stock_id: null, ingredient_name: "", amount_ml: null, amount_text: "", optional: 0 }],
     });
-    setShowModal(true);
+    setShowEditModal(true);
   };
 
   const handleEdit = (drink: DrinkItem) => {
@@ -165,7 +161,8 @@ export function Drinks() {
         ? drink.ingredients
         : [{ stock_id: null, ingredient_name: "", amount_ml: null, amount_text: "", optional: 0 }],
     });
-    setShowModal(true);
+    setSelectedDrink(null);
+    setShowEditModal(true);
   };
 
   const handleSave = async () => {
@@ -194,17 +191,18 @@ export function Drinks() {
         setDrinks((prev) => [...prev, created]);
         showToast("Drink added");
       }
-      setShowModal(false);
+      setShowEditModal(false);
     } catch (err) {
       showToast("Failed to save", "error");
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (drink: DrinkItem) => {
     if (!confirm("Delete this drink?")) return;
     try {
-      await fetch(`/api/drinks/${id}`, { method: "DELETE" });
-      setDrinks((prev) => prev.filter((d) => d.id !== id));
+      await fetch(`/api/drinks/${drink.id}`, { method: "DELETE" });
+      setDrinks((prev) => prev.filter((d) => d.id !== drink.id));
+      setSelectedDrink(null);
       showToast("Drink deleted");
     } catch (err) {
       showToast("Failed to delete", "error");
@@ -229,8 +227,12 @@ export function Drinks() {
         setDrinks((prev) =>
           prev.map((d) => (d.id === drink.id ? { ...d, times_made: data.drink.times_made } : d))
         );
+        // Also update selected drink if viewing
+        if (selectedDrink?.id === drink.id) {
+          setSelectedDrink({ ...selectedDrink, times_made: data.drink.times_made });
+        }
       }
-      showToast(`Made ${drink.name}! Enjoy! 🍸`);
+      showToast(`Made ${drink.name}! Enjoy!`);
     } catch (err) {
       showToast("Failed to update stock", "error");
     } finally {
@@ -262,6 +264,9 @@ export function Drinks() {
         setDrinks((prev) =>
           prev.map((d) => (d.id === drink.id ? { ...d, description: data.drink.description } : d))
         );
+        if (selectedDrink?.id === drink.id) {
+          setSelectedDrink({ ...selectedDrink, description: data.drink.description });
+        }
         showToast("Description generated!");
       } else {
         showToast(data.error || "Failed to generate", "error");
@@ -325,7 +330,7 @@ export function Drinks() {
         <h1>Drinks</h1>
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <button className="btn btn-secondary" onClick={() => navigate("/browse")}>
-            🔍 Find
+            Find
           </button>
           <button className="btn btn-primary" onClick={handleAdd}>
             + Add
@@ -357,95 +362,208 @@ export function Drinks() {
           </button>
         </div>
       ) : (
-        <div className="grid">
-          {filteredDrinks.map((drink) => (
-            <div key={drink.id} className="card">
-              {drink.image_path && (
-                <img
-                  src={drink.image_path}
-                  alt={drink.name}
-                  className="drink-image"
-                  style={{ marginBottom: "1rem" }}
-                />
-              )}
-              <div style={{ fontWeight: 600, fontSize: "1.125rem" }}>{drink.name}</div>
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-                <div className="badge">{drink.category}</div>
-                {drink.times_made > 0 && (
-                  <div className="badge badge-success">Made {drink.times_made}x</div>
+        <div className="grid grid-2">
+          {filteredDrinks.map((drink) => {
+            const canMake = canMakeDrink(drink);
+            const missingCount = getMissingCount(drink);
+
+            return (
+              <div
+                key={drink.id}
+                className="card"
+                onClick={() => setSelectedDrink(drink)}
+                style={{
+                  cursor: "pointer",
+                  opacity: canMake ? 1 : 0.7,
+                }}
+              >
+                {drink.image_path && (
+                  <img
+                    src={drink.image_path}
+                    alt={drink.name}
+                    className="drink-image"
+                    style={{
+                      marginBottom: "0.75rem",
+                      filter: canMake ? "none" : "grayscale(50%)",
+                    }}
+                  />
                 )}
-                {!canMakeDrink(drink) && (
-                  <div className="badge badge-danger">Missing {getMissingCount(drink)}</div>
-                )}
+                <div style={{ fontWeight: 600 }}>{drink.name}</div>
+                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                  <div className="badge">{drink.category}</div>
+                  {drink.times_made > 0 && (
+                    <div className="badge badge-success">Made {drink.times_made}x</div>
+                  )}
+                  {!canMake && (
+                    <div className="badge badge-danger">Missing {missingCount}</div>
+                  )}
+                </div>
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {drink.description ? (
-                <p style={{ marginTop: "0.75rem", fontSize: "0.875rem", fontStyle: "italic", color: "var(--text-secondary)" }}>
-                  {drink.description}
-                </p>
-              ) : (
-                <button
-                  className="btn btn-secondary btn-xs"
-                  style={{ marginTop: "0.75rem" }}
-                  onClick={() => handleGenerateDescription(drink)}
-                  disabled={generatingDesc === drink.id}
-                >
-                  {generatingDesc === drink.id ? "Generating..." : "✨ Generate Description"}
-                </button>
+      {/* Drink Detail Modal */}
+      {selectedDrink && (
+        <div className="modal-overlay" onMouseDown={() => setSelectedDrink(null)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            {selectedDrink.image_path && (
+              <img
+                src={selectedDrink.image_path}
+                alt={selectedDrink.name}
+                className="drink-image"
+                style={{ marginBottom: "1rem" }}
+              />
+            )}
+            <h2 className="modal-title">{selectedDrink.name}</h2>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <div className="badge">{selectedDrink.category}</div>
+              {selectedDrink.times_made > 0 && (
+                <div className="badge badge-success">Made {selectedDrink.times_made}x</div>
               )}
+            </div>
 
-              {drink.ingredients.length > 0 && (
-                <div style={{ marginTop: "0.75rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-                  {drink.ingredients.map((ing, i) => {
-                    const stockItem = ing.stock_id ? stock.find((s) => s.id === ing.stock_id) : null;
-                    const hasEnough = stockItem && (
-                      (ing.amount_ml && ing.amount_ml > 0) ? stockItem.current_ml >= ing.amount_ml : stockItem.current_ml > 0
-                    );
-                    const isMissing = !ing.optional && !hasEnough;
+            {selectedDrink.description ? (
+              <p style={{ marginTop: "1rem", fontSize: "0.875rem", fontStyle: "italic", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                {selectedDrink.description}
+              </p>
+            ) : (
+              <button
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: "1rem" }}
+                onClick={() => handleGenerateDescription(selectedDrink)}
+                disabled={generatingDesc === selectedDrink.id}
+              >
+                {generatingDesc === selectedDrink.id ? "Generating..." : "Generate Description"}
+              </button>
+            )}
+
+            {/* Ingredients List */}
+            {selectedDrink.ingredients.length > 0 && (
+              <div style={{ marginTop: "1.5rem" }}>
+                <h3 style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Ingredients
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {selectedDrink.ingredients.map((ing, i) => {
+                    const hasStock = hasEnoughStock(ing);
+                    const isMissing = !ing.optional && !hasStock;
+                    const amount = formatAmount(ing.amount_text, ing.amount_ml);
+
                     return (
-                      <div key={i} style={{ color: isMissing ? "var(--danger)" : undefined }}>
-                        {formatAmount(ing.amount_text, ing.amount_ml)} {ing.ingredient_name}
-                        {isMissing && " ✗"}
+                      <div
+                        key={i}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.75rem",
+                          padding: "0.5rem 0",
+                          borderBottom: i < selectedDrink.ingredients.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                        }}
+                      >
+                        {/* Amount Badge */}
+                        {amount && (
+                          <span
+                            style={{
+                              minWidth: "60px",
+                              padding: "0.25rem 0.5rem",
+                              borderRadius: "0.375rem",
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                              textAlign: "center",
+                              background: isMissing
+                                ? "rgba(239, 68, 68, 0.2)"
+                                : "rgba(34, 197, 94, 0.15)",
+                              color: isMissing
+                                ? "var(--danger)"
+                                : "rgba(34, 197, 94, 0.9)",
+                            }}
+                          >
+                            {amount}
+                          </span>
+                        )}
+                        {/* Ingredient Name */}
+                        <span
+                          style={{
+                            flex: 1,
+                            color: isMissing ? "var(--text-secondary)" : "var(--text)",
+                            opacity: isMissing ? 0.6 : 1,
+                          }}
+                        >
+                          {ing.ingredient_name}
+                          {ing.optional === 1 && (
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginLeft: "0.5rem" }}>
+                              (optional)
+                            </span>
+                          )}
+                        </span>
                       </div>
                     );
                   })}
                 </div>
-              )}
+              </div>
+            )}
 
-              {canMakeDrink(drink) ? (
+            {/* Instructions */}
+            {selectedDrink.instructions && (
+              <div style={{ marginTop: "1.5rem" }}>
+                <h3 style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Instructions
+                </h3>
+                <p style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{selectedDrink.instructions}</p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem", flexWrap: "wrap" }}>
+              {canMakeDrink(selectedDrink) ? (
                 <button
-                  className="btn btn-success made-it-btn"
-                  style={{ marginTop: "1rem" }}
-                  onClick={() => handleMakeIt(drink)}
-                  disabled={makingDrink === drink.id}
+                  className="btn btn-success"
+                  style={{ flex: "1 1 100%" }}
+                  onClick={() => handleMakeIt(selectedDrink)}
+                  disabled={makingDrink === selectedDrink.id}
                 >
-                  {makingDrink === drink.id ? "Making..." : "🍸 Made It!"}
+                  {makingDrink === selectedDrink.id ? "Making..." : "Made It!"}
                 </button>
               ) : (
                 <button
                   className="btn btn-secondary"
-                  style={{ marginTop: "1rem", width: "100%", fontSize: "0.875rem", padding: "0.75rem" }}
-                  onClick={() => handleAddToShopping(drink)}
+                  style={{ flex: "1 1 100%" }}
+                  onClick={() => handleAddToShopping(selectedDrink)}
                 >
-                  🛒 Add Missing to Shop
+                  Add Missing to Shop
                 </button>
               )}
-
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
-                <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => handleEdit(drink)}>
-                  Edit
-                </button>
-                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(drink.id)}>
-                  ✕
-                </button>
-              </div>
+              <button
+                className="btn btn-secondary"
+                style={{ flex: "1 1 45%" }}
+                onClick={() => setSelectedDrink(null)}
+              >
+                Close
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ flex: "1 1 45%" }}
+                onClick={() => handleEdit(selectedDrink)}
+              >
+                Edit
+              </button>
+              <button
+                className="btn btn-danger"
+                style={{ flex: "1 1 100%" }}
+                onClick={() => handleDelete(selectedDrink)}
+              >
+                Delete
+              </button>
             </div>
-          ))}
+          </div>
         </div>
       )}
 
-      {showModal && (
-        <div className="modal-overlay" onMouseDown={() => setShowModal(false)}>
+      {/* Edit/Add Modal */}
+      {showEditModal && (
+        <div className="modal-overlay" onMouseDown={() => setShowEditModal(false)}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
             <h2 className="modal-title">{editingDrink ? "Edit Drink" : "Add Drink"}</h2>
 
@@ -550,7 +668,7 @@ export function Drinks() {
             </div>
 
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem" }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowModal(false)}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowEditModal(false)}>
                 Cancel
               </button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSave}>
