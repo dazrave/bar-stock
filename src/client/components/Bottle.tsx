@@ -3,7 +3,7 @@ import React from "react";
 interface BottleProps {
   currentMl: number;
   totalMl: number;
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
 }
 
 export function Bottle({ currentMl, totalMl, size = "md" }: BottleProps) {
@@ -18,6 +18,7 @@ export function Bottle({ currentMl, totalMl, size = "md" }: BottleProps) {
   }
 
   const sizes = {
+    xs: { width: 24, height: 42 },
     sm: { width: 40, height: 70 },
     md: { width: 60, height: 100 },
     lg: { width: 80, height: 140 },

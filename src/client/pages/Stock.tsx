@@ -23,6 +23,7 @@ export function Stock() {
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
   const [filter, setFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [quickEditId, setQuickEditId] = useState<number | null>(null);
   const [quickEditValue, setQuickEditValue] = useState("");
   const [ingredientSuggestions, setIngredientSuggestions] = useState<string[]>([]);
@@ -223,14 +224,73 @@ export function Stock() {
     setQuickEditId(null);
   };
 
-  const filteredStock = filter === "All" ? stock : stock.filter((s) => s.category === filter);
+  const searchLower = searchQuery.toLowerCase();
+  const filteredStock = stock.filter((s) => {
+    const matchesCategory = filter === "All" || s.category === filter;
+    const matchesSearch = !searchQuery || s.name.toLowerCase().includes(searchLower);
+    return matchesCategory && matchesSearch;
+  });
   const categories = ["All", ...CATEGORIES];
+
+  // Group stock by category for "All" view
+  const groupedStock = filter === "All"
+    ? CATEGORIES.reduce((acc, cat) => {
+        const items = filteredStock.filter((s) => s.category === cat);
+        if (items.length > 0) acc[cat] = items;
+        return acc;
+      }, {} as Record<string, StockItem[]>)
+    : null;
 
   // Calculate category counts
   const categoryCounts = categories.reduce((acc, cat) => {
     acc[cat] = cat === "All" ? stock.length : stock.filter((s) => s.category === cat).length;
     return acc;
   }, {} as Record<string, number>);
+
+  // Render a compact stock item
+  const renderStockItem = (item: StockItem) => (
+    <div key={item.id} className="stock-row">
+      <div className="stock-row-main">
+        <Bottle currentMl={item.current_ml} totalMl={item.total_ml} size="xs" />
+        <div className="stock-row-info">
+          <span className="stock-row-name">{item.name}</span>
+          <span className="stock-row-volume">
+            {item.unit_type === "count"
+              ? `${item.current_ml}/${item.total_ml}`
+              : `${formatVolume(item.current_ml)}/${formatVolume(item.total_ml)}`}
+          </span>
+        </div>
+        {quickEditId === item.id ? (
+          <input
+            className="input stock-row-quick-input"
+            value={quickEditValue}
+            onChange={(e) => setQuickEditValue(e.target.value)}
+            onBlur={() => handleQuickEditSave(item)}
+            onKeyDown={(e) => e.key === "Enter" && handleQuickEditSave(item)}
+            autoFocus
+            placeholder={item.unit_type === "count" ? "5" : "50%"}
+          />
+        ) : (
+          <div
+            className="stock-row-percent"
+            onClick={() => handleQuickEdit(item)}
+            title={item.unit_type === "count" ? "Tap to edit" : "Tap to edit (50%, 350ml)"}
+          >
+            {item.unit_type === "count"
+              ? item.current_ml
+              : `${Math.round((item.current_ml / item.total_ml) * 100)}%`}
+          </div>
+        )}
+      </div>
+      <div className="stock-row-controls">
+        <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>−</button>
+        <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>+</button>
+        <button className="btn btn-secondary btn-xs" onClick={() => handleRefill(item)}>Refill</button>
+        <button className="btn btn-secondary btn-xs" onClick={() => handleEdit(item)}>Edit</button>
+        <button className="btn btn-danger btn-xs" onClick={() => handleDelete(item.id)}>✕</button>
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -264,6 +324,17 @@ export function Stock() {
         ))}
       </div>
 
+      <div style={{ marginBottom: "1rem" }}>
+        <input
+          className="input"
+          type="text"
+          placeholder="Search stock..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ width: "100%" }}
+        />
+      </div>
+
       {filteredStock.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">🍾</div>
@@ -272,83 +343,20 @@ export function Stock() {
             Add your first bottle
           </button>
         </div>
-      ) : (
-        <div className="grid">
-          {filteredStock.map((item) => (
-            <div key={item.id} className="card">
-              <div className="stock-item">
-                <Bottle currentMl={item.current_ml} totalMl={item.total_ml} size="sm" />
-                <div className="stock-info">
-                  <div className="stock-name">{item.name}</div>
-                  <div className="stock-category">{item.category}</div>
-                  <div style={{ fontSize: "0.875rem", marginTop: "0.25rem", color: "var(--text-secondary)" }}>
-                    {item.unit_type === "count"
-                      ? `${item.current_ml} / ${item.total_ml} remaining`
-                      : `${formatVolume(item.current_ml)} / ${formatVolume(item.total_ml)}`}
-                  </div>
-                  {item.total_used_ml > 0 && (
-                    <div style={{ fontSize: "0.75rem", marginTop: "0.25rem", color: "var(--success)" }}>
-                      Used: {item.unit_type === "count" ? item.total_used_ml : formatVolume(item.total_used_ml)} all time
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="volume-controls" style={{ marginTop: "1rem" }}>
-                <button className="volume-btn" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>
-                  −
-                </button>
-                {quickEditId === item.id ? (
-                  <input
-                    className="input"
-                    style={{ width: "5rem", textAlign: "center", padding: "0.5rem" }}
-                    value={quickEditValue}
-                    onChange={(e) => setQuickEditValue(e.target.value)}
-                    onBlur={() => handleQuickEditSave(item)}
-                    onKeyDown={(e) => e.key === "Enter" && handleQuickEditSave(item)}
-                    autoFocus
-                    placeholder={item.unit_type === "count" ? "5" : "50%"}
-                  />
-                ) : (
-                  <div
-                    className="volume-display"
-                    onClick={() => handleQuickEdit(item)}
-                    style={{ cursor: "pointer", textDecoration: "underline dotted" }}
-                    title={item.unit_type === "count" ? "Tap to edit count" : "Tap to edit (50%, 350ml, 35cl)"}
-                  >
-                    {item.unit_type === "count"
-                      ? item.current_ml
-                      : `${Math.round((item.current_ml / item.total_ml) * 100)}%`}
-                  </div>
-                )}
-                <button className="volume-btn" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>
-                  +
-                </button>
-              </div>
-
-              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  style={{ flex: 1 }}
-                  onClick={() => handleRefill(item)}
-                >
-                  Refill
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => handleEdit(item)}
-                >
-                  Edit
-                </button>
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={() => handleDelete(item.id)}
-                >
-                  ✕
-                </button>
-              </div>
+      ) : groupedStock ? (
+        // "All" view - show grouped by category
+        <div className="stock-list">
+          {Object.entries(groupedStock).map(([category, items]) => (
+            <div key={category} className="stock-category-group">
+              <h3 className="stock-category-header">{category}</h3>
+              {items.map((item) => renderStockItem(item))}
             </div>
           ))}
+        </div>
+      ) : (
+        // Single category view
+        <div className="stock-list">
+          {filteredStock.map((item) => renderStockItem(item))}
         </div>
       )}
 
