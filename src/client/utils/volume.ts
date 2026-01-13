@@ -125,9 +125,26 @@ export function mlToOz(ml: number): number {
 }
 
 /**
- * Format a CocktailDB measure for display, converting oz to ml
- * @param measure - Original measure string (e.g., "1 1/2 oz")
- * @returns Formatted string in ml (e.g., "45ml") or original if not oz
+ * Parse a fractional number string (e.g., "1 1/2", "1/2", "2")
+ */
+function parseFraction(str: string): number {
+  let total = 0;
+  const parts = str.trim().split(/\s+/);
+  for (const part of parts) {
+    if (part.includes("/")) {
+      const [num, denom] = part.split("/").map(Number);
+      if (num && denom) total += num / denom;
+    } else {
+      total += parseFloat(part) || 0;
+    }
+  }
+  return total;
+}
+
+/**
+ * Format a CocktailDB measure for display, converting oz/tsp/tbsp/cl to ml
+ * @param measure - Original measure string (e.g., "1 1/2 oz", "2 teaspoons")
+ * @returns Formatted string in ml (e.g., "45ml") or original if not convertible
  */
 export function formatMeasureWithMl(measure: string): string {
   if (!measure) return "";
@@ -137,11 +154,26 @@ export function formatMeasureWithMl(measure: string): string {
     return `${ml}ml`;
   }
 
-  // Check for cl and convert
   const trimmed = measure.trim().toLowerCase();
+
+  // Check for cl and convert (1 cl = 10ml)
   const clMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*cl$/);
   if (clMatch) {
     return `${Math.round(parseFloat(clMatch[1]) * 10)}ml`;
+  }
+
+  // Check for teaspoons and convert (1 tsp = 5ml)
+  const tspMatch = trimmed.match(/^([\d.\/\s]+)\s*(?:tsp|teaspoons?)$/);
+  if (tspMatch) {
+    const tsp = parseFraction(tspMatch[1]);
+    if (tsp > 0) return `${Math.round(tsp * 5)}ml`;
+  }
+
+  // Check for tablespoons and convert (1 tbsp = 15ml)
+  const tbspMatch = trimmed.match(/^([\d.\/\s]+)\s*(?:tbsp|tblsp|tablespoons?)$/);
+  if (tbspMatch) {
+    const tbsp = parseFraction(tbspMatch[1]);
+    if (tbsp > 0) return `${Math.round(tbsp * 15)}ml`;
   }
 
   return measure.trim();
