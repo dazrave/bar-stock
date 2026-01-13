@@ -868,8 +868,8 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
         // Decode any HTML entities
         const decodedText = decodeHtmlEntities(text);
 
-        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "Few Dashes Bitters", "Top up with Ginger beer", "Top with Cola", "Bar Spoon Maraschino"
-        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?)?|(?:bar\s*spoon)|(?:few\s+dashes?)|(?:few\s+drops?)|top(?:\s*up)?(?:\s*with)?)\s+(.+)$/i);
+        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "Dash Bitters", "Few Dashes Bitters", "Top with Cola", "Bar Spoon Maraschino"
+        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?)?|(?:bar\s*spoon)|(?:few\s+)?(?:dashes?|drops?)|top(?:\s*up)?(?:\s*with)?)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({
             measure: measureMatch[1].trim(),
@@ -1048,7 +1048,7 @@ app.post("/api/import-url", requireAuth(), async (c) => {
       while ((match = simplePattern.exec(html)) !== null) {
         const text = match[1].replace(/<[^>]+>/g, " ").trim();
         // Try to split measure from name (same patterns as IBA parsing)
-        const measureMatch = text.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?|shots?)?|(?:bar\s*spoon)|(?:few\s+dashes?)|(?:few\s+drops?)|top(?:\s*up)?(?:\s*with)?)\s+(.+)$/i);
+        const measureMatch = text.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?|shots?)?|(?:bar\s*spoon)|(?:few\s+)?(?:dashes?|drops?)|top(?:\s*up)?(?:\s*with)?)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({ name: measureMatch[2].trim(), measure: measureMatch[1].trim() });
         } else {
