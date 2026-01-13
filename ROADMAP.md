@@ -52,16 +52,26 @@
 
 ### Phase 3: Custom Menus
 
-#### Menu Management
-- [ ] Create named menus (e.g., "House Favorites", "Non-Alcoholic", "Summer Drinks")
+#### Menu Management (Owner)
+- [ ] Create multiple named menus (e.g., "House Favorites", "Non-Alcoholic", "Summer Drinks")
 - [ ] Add drinks from "My Drinks" to menus (must import first)
 - [ ] Reorder drinks within menus (drag & drop)
 - [ ] Menu descriptions/headers
+- [ ] **Show/hide entire menus** - toggle menu visibility
+- [ ] **Show/hide individual drinks** - toggle per drink per menu
 
-#### Menu Display
-- [ ] Owner: manage which menus are active
-- [ ] Guest: sees list of active menus to browse
-- [ ] Ghost/hide unavailable drinks (missing ingredients)
+#### Menu Display Rules
+| Viewer | Menu Visibility | Drink Visibility |
+|--------|-----------------|------------------|
+| Owner | Sees all menus (active + inactive) | Sees all drinks (hidden shown as ghosted) |
+| Guest | Only sees active menus | Only sees: visible drinks + can make |
+
+**Key rule**: If a drink can't be made (missing ingredients), it's NEVER shown to guests, even if "visible" is checked.
+
+#### Owner Menu View
+- [ ] Toggle menu active/inactive
+- [ ] Per-drink toggles: "Show on this menu" / "Hide from this menu"
+- [ ] Badge showing "X hidden" and "X unavailable"
 
 #### Database
 ```sql
@@ -69,7 +79,7 @@ CREATE TABLE menus (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
-  active INTEGER DEFAULT 1,
+  active INTEGER DEFAULT 1,  -- shown to guests?
   sort_order INTEGER DEFAULT 0
 );
 
@@ -77,11 +87,11 @@ CREATE TABLE menu_drinks (
   menu_id INTEGER,
   drink_id INTEGER,  -- references drinks table (My Drinks)
   sort_order INTEGER DEFAULT 0,
-  hidden INTEGER DEFAULT 0
+  hidden INTEGER DEFAULT 0  -- manually hidden by owner
 );
 ```
 
-**Decided**: Menus contain drinks from "My Drinks" only. Import from IBA/CocktailDB first.
+**Decided**: Menus contain drinks from "My Drinks" only. Unavailable drinks auto-hidden from guests.
 
 ---
 
@@ -308,7 +318,23 @@ These are small improvements that can be done quickly:
    - Images not loading (possible hotlink protection)
    - Ingredients not being parsed
    - Instructions/method not being extracted
-   - **Fix**: Investigate HTML structure, may need different parsing approach or use their API if available
+   - **Root cause**: Regex patterns too complex, HTML structure is simpler:
+     ```html
+     <!-- Ingredients are simple <ul><li> -->
+     <ul>
+       <li>50 ml Tequila 100% Agave</li>
+       <li>20 ml Triple Sec</li>
+     </ul>
+
+     <!-- Method is <p> tags -->
+     <p>Add all ingredients into a shaker with ice.</p>
+     <p>Shake and strain into a chilled cocktail glass.</p>
+
+     <!-- Garnish is <p> after garnish heading -->
+     <p>Half salt rim (Optional).</p>
+     ```
+   - **Fix needed**: Simplify regex, look for content between section headers
+   - **Image fix**: May need to download images to local storage instead of hotlinking
 
 2. **Drinks Page Shows Unmakeable**
    - Imported drinks show even without ingredients
