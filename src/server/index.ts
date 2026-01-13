@@ -588,13 +588,16 @@ app.post("/api/iba/import/:id", requireAuth(), async (c) => {
   return c.json({ ...drink, ingredients: savedIngredients }, 201);
 });
 
-// Scrape IBA cocktails
+// Clear all IBA drinks (for resync)
+app.delete("/api/iba/all", requireAuth(), (c) => {
+  ibaQueries.deleteAll.run();
+  return c.json({ success: true });
+});
+
+// Scrape IBA cocktails from all-cocktails page with pagination
 app.post("/api/iba/sync", requireAuth(), async (c) => {
-  const categories = [
-    { url: "https://iba-world.com/cocktails/the-unforgettables/", name: "The Unforgettables" },
-    { url: "https://iba-world.com/cocktails/the-contemporary/", name: "The Contemporary" },
-    { url: "https://iba-world.com/cocktails/the-new-era/", name: "The New Era" },
-  ];
+  const baseUrl = "https://iba-world.com/cocktails/all-cocktails/";
+  const maxPages = 10; // Safety limit
 
   // Get existing slugs to track new vs updated
   const existingSlugs = new Set(ibaQueries.getAllSlugs.all().map((r) => r.slug));
@@ -602,8 +605,9 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
   let synced = 0;
   let skipped = 0;
   const errors: string[] = [];
+  const allCocktailUrls: string[] = [];
 
-  // Helper to extract cocktail URLs from category page
+  // Helper to extract cocktail URLs from listing page
   const extractCocktailUrls = (html: string): string[] => {
     const urls: string[] = [];
     const regex = /href="(https:\/\/iba-world\.com\/iba-cocktail\/[^"]+)"/g;
@@ -615,6 +619,36 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
     }
     return urls;
   };
+
+  // Fetch all pages to collect cocktail URLs
+  for (let page = 1; page <= maxPages; page++) {
+    const pageUrl = page === 1 ? baseUrl : `${baseUrl}page/${page}/`;
+    try {
+      const res = await fetch(pageUrl);
+      if (!res.ok) {
+        if (page > 1) break; // No more pages
+        errors.push(`Failed to fetch page ${page}: ${res.status}`);
+        continue;
+      }
+      const html = await res.text();
+      const urls = extractCocktailUrls(html);
+      if (urls.length === 0) break; // No more cocktails
+
+      for (const url of urls) {
+        if (!allCocktailUrls.includes(url)) {
+          allCocktailUrls.push(url);
+        }
+      }
+
+      // Check if there's a next page link
+      if (!html.includes(`/page/${page + 1}/`)) break;
+
+      await new Promise((r) => setTimeout(r, 200)); // Rate limit
+    } catch (err) {
+      errors.push(`Error fetching page ${page}`);
+      break;
+    }
+  }
 
   // Helper to decode HTML entities
   const decodeHtmlEntities = (text: string): string => {
@@ -822,56 +856,42 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
     };
   };
 
-  // Process each category
-  for (const cat of categories) {
+  // Process each cocktail URL
+  for (const url of allCocktailUrls) {
     try {
-      const catRes = await fetch(cat.url);
-      if (!catRes.ok) {
-        errors.push(`Failed to fetch ${cat.name}: ${catRes.status}`);
+      const slug = url.split("/iba-cocktail/")[1]?.replace(/\/$/, "") || "";
+
+      // Skip if we already have it
+      if (existingSlugs.has(slug)) {
+        skipped++;
         continue;
       }
-      const catHtml = await catRes.text();
-      const cocktailUrls = extractCocktailUrls(catHtml);
 
-      for (const url of cocktailUrls) {
-        try {
-          const slug = url.split("/iba-cocktail/")[1]?.replace(/\/$/, "") || "";
+      // Small delay to be respectful
+      await new Promise((r) => setTimeout(r, 200));
 
-          // Skip if we already have it
-          if (existingSlugs.has(slug)) {
-            skipped++;
-            continue;
-          }
-
-          // Small delay to be respectful
-          await new Promise((r) => setTimeout(r, 200));
-
-          const drinkRes = await fetch(url);
-          if (!drinkRes.ok) {
-            errors.push(`Failed to fetch ${url}: ${drinkRes.status}`);
-            continue;
-          }
-          const drinkHtml = await drinkRes.text();
-          const details = extractCocktailDetails(drinkHtml, url, cat.name);
-
-          ibaQueries.upsert.run(
-            details.slug,
-            details.name,
-            details.category,
-            details.glass,
-            details.garnish,
-            details.method,
-            details.image_url,
-            details.ingredients_json
-          );
-
-          synced++;
-        } catch (err) {
-          errors.push(`Error processing ${url}: ${err}`);
-        }
+      const drinkRes = await fetch(url);
+      if (!drinkRes.ok) {
+        errors.push(`Failed to fetch ${url}: ${drinkRes.status}`);
+        continue;
       }
+      const drinkHtml = await drinkRes.text();
+      const details = extractCocktailDetails(drinkHtml, url, "IBA Official");
+
+      ibaQueries.upsert.run(
+        details.slug,
+        details.name,
+        details.category,
+        details.glass,
+        details.garnish,
+        details.method,
+        details.image_url,
+        details.ingredients_json
+      );
+
+      synced++;
     } catch (err) {
-      errors.push(`Error fetching category ${cat.name}: ${err}`);
+      errors.push(`Error processing ${url}: ${err}`);
     }
   }
 

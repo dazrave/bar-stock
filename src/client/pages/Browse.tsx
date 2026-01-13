@@ -148,8 +148,40 @@ export function Browse() {
         showToast("No new drinks found");
       }
       fetchCounts();
+      setDrinks([]);
     } catch (err) {
       showToast("Sync failed", "error");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleClearAndResync = async () => {
+    if (source !== "iba") {
+      showToast("Clear & Resync only available for IBA", "error");
+      return;
+    }
+    if (!confirm("This will DELETE all IBA drinks and re-fetch them from scratch. Continue?")) return;
+
+    setSyncing(true);
+    try {
+      // Delete all first
+      await fetch("/api/iba/all", { method: "DELETE" });
+      showToast("Cleared IBA cache, now re-syncing...");
+      setDrinks([]);
+      fetchCounts();
+
+      // Then sync fresh
+      const res = await fetch("/api/iba/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.synced > 0) {
+        showToast(`Synced ${data.synced} IBA cocktails!`);
+      } else {
+        showToast("No drinks found");
+      }
+      fetchCounts();
+    } catch (err) {
+      showToast("Resync failed", "error");
     } finally {
       setSyncing(false);
     }
@@ -269,13 +301,24 @@ export function Browse() {
     <div className="page">
       <div className="header">
         <h1>Browse</h1>
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={handleSync}
-          disabled={syncing}
-        >
-          {syncing ? "Syncing..." : "Sync"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          {source === "iba" && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleClearAndResync}
+              disabled={syncing}
+            >
+              {syncing ? "..." : "Resync"}
+            </button>
+          )}
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            {syncing ? "Syncing..." : "Sync"}
+          </button>
+        </div>
       </div>
 
       {/* Source tabs */}

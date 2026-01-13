@@ -508,6 +508,7 @@ export const ibaQueries = {
   ),
   getCount: db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM iba_drinks"),
   getAllSlugs: db.query<{ slug: string }, []>("SELECT slug FROM iba_drinks"),
+  deleteAll: db.query<null, []>("DELETE FROM iba_drinks"),
   toggleHidden: db.query<IBADrink, [number]>(
     "UPDATE iba_drinks SET hidden = NOT hidden WHERE id = ? RETURNING *"
   ),
