@@ -372,6 +372,15 @@ import homepage from "../client/index.html";
 const server = Bun.serve({
   port,
   hostname: "0.0.0.0",
+  // Use routes for the HTML bundle
+  routes: {
+    "/": homepage,
+    "/stock": homepage,
+    "/drinks": homepage,
+    "/browse": homepage,
+    "/menu": homepage,
+    "/settings": homepage,
+  },
   async fetch(req) {
     const url = new URL(req.url);
 
@@ -380,8 +389,10 @@ const server = Bun.serve({
       return app.fetch(req);
     }
 
-    // Serve the SPA for all other routes
-    return homepage;
+    // Fallback: serve HTML for SPA routes
+    return new Response(Bun.file("./src/client/index.html"), {
+      headers: { "Content-Type": "text/html" },
+    });
   },
   development: {
     hmr: true,
