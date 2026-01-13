@@ -1047,8 +1047,8 @@ app.post("/api/import-url", requireAuth(), async (c) => {
       const simplePattern = /<li[^>]*class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
       while ((match = simplePattern.exec(html)) !== null) {
         const text = match[1].replace(/<[^>]+>/g, " ").trim();
-        // Try to split measure from name
-        const measureMatch = text.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|parts?|shots?)?)\s+(.+)$/i);
+        // Try to split measure from name (same patterns as IBA parsing)
+        const measureMatch = text.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|bar\s*spoons?|parts?|shots?)?|(?:bar\s*spoon)|(?:few\s+dashes?)|(?:few\s+drops?)|top(?:\s*up)?(?:\s*with)?)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({ name: measureMatch[2].trim(), measure: measureMatch[1].trim() });
         } else {
