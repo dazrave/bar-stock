@@ -123,6 +123,14 @@ CREATE TABLE drink_requests (
 
 **Decided**: Simple name prompt, no guest accounts. Queue managed by owner.
 
+#### Navigation by Role
+| Role | Nav Items |
+|------|-----------|
+| Owner | Stock, Drinks, Browse, Menus, Queue, Shopping, Settings |
+| Guest | Menu, Queue (sees all requests with names, can order for others) |
+
+**Note**: Guests use same shared passcode for simplicity. Queue shows everyone's requests so guests can order on behalf of others (e.g., "Sarah wants a Margarita").
+
 ---
 
 ### Phase 5: Cost & Inventory Analysis
@@ -250,6 +258,7 @@ CREATE TABLE drink_requests (
 ### Pain Points Identified
 1. **Auto-fill category when adding stock** - e.g., typing "Prosecco" should auto-suggest "Wine" category
 2. **Category counts on filter tabs** - Show count badge next to each category (e.g., "Wine (3)")
+3. **BUG: Can add drinks to menu without stock** - Should prevent/warn when importing drinks you can't make
 
 ---
 
@@ -259,12 +268,19 @@ These are small improvements that can be done quickly:
 
 ### Stock Page
 - [ ] Category counts on filter tabs: "Wine (3)", "Spirits (8)"
-- [ ] Auto-suggest category based on ingredient name (use CocktailDB ingredient data)
+- [ ] Smart category auto-fill (layered approach):
+  1. **Static mapping** - Common ingredients → categories (instant)
+  2. **CocktailDB lookup** - Fetch category from API if not in static map
+  3. **Learn from history** - Remember user's past category choices per ingredient
 - [ ] Show "empty" badge on bottles at 0ml
+- [ ] Default categories: Spirits, Wine, Beer, Liqueurs, Mixers, Juice, Fruit, Bitters, Syrups, Garnishes, Other
 
 ### Browse Page
 - [ ] Show "Already imported" badge if drink exists in My Drinks
 - [ ] Batch import multiple drinks at once
+- [ ] **Import warning**: When adding drink you can't make, show:
+  - "Missing ingredients: Campari, Sweet Vermouth"
+  - Option: "Import anyway" or "Add missing to shopping list & import"
 
 ### Drinks Page
 - [ ] Sort by: Name, Times Made, Recently Added
