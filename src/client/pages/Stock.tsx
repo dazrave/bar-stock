@@ -279,15 +279,6 @@ export function Stock() {
   }));
   const categories = ["All", ...CATEGORIES];
 
-  // Group stock by category for "All" view
-  const groupedStock = filter === "All"
-    ? CATEGORIES.reduce((acc, cat) => {
-        const items = sortStock(filteredStock.filter((s) => s.category === cat));
-        if (items.length > 0) acc[cat] = items;
-        return acc;
-      }, {} as Record<string, StockItem[]>)
-    : null;
-
   // Calculate category counts
   const categoryCounts = categories.reduce((acc, cat) => {
     acc[cat] = cat === "All" ? stock.length : stock.filter((s) => s.category === cat).length;
@@ -304,6 +295,7 @@ export function Stock() {
         <div className="stock-row-info">
           <span className="stock-row-name">
             {item.name}
+            <span className="badge" style={{ marginLeft: "0.5rem", fontSize: "0.625rem", padding: "0.125rem 0.375rem" }}>{item.category}</span>
             {inShoppingList && <span style={{ marginLeft: "0.5rem", color: "var(--warning)" }}>🛒</span>}
           </span>
           <span className="stock-row-volume">
@@ -421,18 +413,7 @@ export function Stock() {
             Add your first bottle
           </button>
         </div>
-      ) : groupedStock ? (
-        // "All" view - show grouped by category
-        <div className="stock-list">
-          {Object.entries(groupedStock).map(([category, items]) => (
-            <div key={category} className="stock-category-group">
-              <h3 className="stock-category-header">{category}</h3>
-              {items.map((item) => renderStockItem(item))}
-            </div>
-          ))}
-        </div>
       ) : (
-        // Single category view
         <div className="stock-list">
           {filteredStock.map((item) => renderStockItem(item))}
         </div>
