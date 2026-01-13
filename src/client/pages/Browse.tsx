@@ -234,6 +234,17 @@ export function Browse() {
     });
   };
 
+  // Count how many ingredients we have vs total
+  const getIngredientCount = (drink: Drink): { have: number; total: number } => {
+    const ingredients = parseIngredients(drink.ingredients_json);
+    if (ingredients.length === 0) return { have: 0, total: 0 };
+    const have = ingredients.filter((ing) => {
+      const stockMatch = findStockMatch(ing.name);
+      return stockMatch && stockMatch.current_ml > 0;
+    }).length;
+    return { have, total: ingredients.length };
+  };
+
   // Toggle hidden status on a drink
   const handleToggleHidden = async (drink: Drink) => {
     try {
@@ -393,6 +404,7 @@ export function Browse() {
             const canMake = canMakeDrink(drink);
             const isHidden = drink.hidden === 1;
             const isGhosted = isOwner && (!canMake || isHidden);
+            const { have, total } = getIngredientCount(drink);
 
             return (
               <div
@@ -430,9 +442,30 @@ export function Browse() {
                 />
               )}
               <div style={{ fontWeight: 600 }}>{drink.name}</div>
-              {drink.category && (
-                <div className="badge" style={{ marginTop: "0.5rem" }}>{drink.category}</div>
-              )}
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                {drink.category && (
+                  <div className="badge">{drink.category}</div>
+                )}
+                {total > 0 && (
+                  <div
+                    className="badge"
+                    style={{
+                      background: canMake
+                        ? "rgba(34, 197, 94, 0.2)"
+                        : have > 0
+                          ? "rgba(234, 179, 8, 0.2)"
+                          : "rgba(239, 68, 68, 0.2)",
+                      color: canMake
+                        ? "var(--success)"
+                        : have > 0
+                          ? "var(--warning)"
+                          : "var(--danger)",
+                    }}
+                  >
+                    {have}/{total}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
