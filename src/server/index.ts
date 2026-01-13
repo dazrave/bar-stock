@@ -357,6 +357,16 @@ app.get("/api/cocktaildb/ingredients", requireAuth(true), (c) => {
   return c.json(ingredients.map((i) => i.name));
 });
 
+// Toggle hidden status on a cocktaildb drink
+app.post("/api/cocktaildb/:id/toggle-hidden", requireAuth(), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const drink = cocktailDBQueries.toggleHidden.get(id);
+  if (!drink) {
+    return c.json({ error: "Drink not found" }, 404);
+  }
+  return c.json(drink);
+});
+
 // ============ SHOPPING LIST ROUTES ============
 
 // Get all shopping list items with linked drinks

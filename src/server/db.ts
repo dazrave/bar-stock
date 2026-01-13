@@ -59,6 +59,7 @@ db.exec(`
     image_path TEXT,
     image_url TEXT,
     ingredients_json TEXT,
+    hidden INTEGER DEFAULT 0,
     scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -118,6 +119,14 @@ if (ingredientCount.count === 0 && drinkCount.count > 0) {
   console.log(`Migrated ${seen.size} unique ingredients`);
 }
 
+// Add hidden column to cocktaildb_drinks if missing (migration)
+try {
+  db.run("ALTER TABLE cocktaildb_drinks ADD COLUMN hidden INTEGER DEFAULT 0");
+  console.log("Added hidden column to cocktaildb_drinks");
+} catch {
+  // Column already exists
+}
+
 // Types
 export interface Stock {
   id: number;
@@ -158,6 +167,7 @@ export interface CocktailDBDrink {
   image_path: string | null;
   image_url: string | null;
   ingredients_json: string;
+  hidden: number;
   scraped_at: string;
 }
 
@@ -279,6 +289,11 @@ export const cocktailDBQueries = {
   ),
   getIngredientCount: db.query<{ count: number }, []>(
     "SELECT COUNT(*) as count FROM cocktaildb_ingredients"
+  ),
+
+  // Hide/show drinks
+  toggleHidden: db.query<CocktailDBDrink, [number]>(
+    "UPDATE cocktaildb_drinks SET hidden = NOT hidden WHERE id = ? RETURNING *"
   ),
 };
 

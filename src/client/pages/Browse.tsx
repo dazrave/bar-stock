@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import { formatMeasureWithMl, formatVolume } from "../utils/volume";
 
 interface CocktailDBDrink {
@@ -11,6 +12,7 @@ interface CocktailDBDrink {
   instructions: string | null;
   image_url: string | null;
   ingredients_json: string;
+  hidden: number;
 }
 
 interface StockItem {
@@ -29,7 +31,10 @@ export function Browse() {
   const [syncing, setSyncing] = useState(false);
   const [selectedDrink, setSelectedDrink] = useState<CocktailDBDrink | null>(null);
   const [importing, setImporting] = useState<number | null>(null);
+  const [filterCanMake, setFilterCanMake] = useState(false);
   const { showToast } = useToast();
+  const { session } = useAuth();
+  const isOwner = session?.type === "owner";
 
   useEffect(() => {
     fetchCount();
@@ -140,6 +145,56 @@ export function Browse() {
     );
   };
 
+  // Check if a drink can be made (all ingredients have stock with current_ml > 0)
+  const canMakeDrink = (drink: CocktailDBDrink): boolean => {
+    const ingredients = parseIngredients(drink.ingredients_json);
+    if (ingredients.length === 0) return true; // No ingredients = can make
+    return ingredients.every((ing) => {
+      const stockMatch = findStockMatch(ing.name);
+      return stockMatch && stockMatch.current_ml > 0;
+    });
+  };
+
+  // Toggle hidden status on a drink
+  const handleToggleHidden = async (drink: CocktailDBDrink) => {
+    try {
+      const res = await fetch(`/api/cocktaildb/${drink.id}/toggle-hidden`, { method: "POST" });
+      if (res.ok) {
+        const updated = await res.json();
+        // Update drinks list
+        setDrinks((prev) => prev.map((d) => (d.id === drink.id ? updated : d)));
+        // Update selected drink if viewing
+        if (selectedDrink?.id === drink.id) {
+          setSelectedDrink(updated);
+        }
+        showToast(updated.hidden ? `${drink.name} hidden` : `${drink.name} visible`);
+      }
+    } catch {
+      showToast("Failed to update", "error");
+    }
+  };
+
+  // Filter drinks based on role and canMake status
+  const filteredDrinks = useMemo(() => {
+    return drinks.filter((drink) => {
+      const canMake = canMakeDrink(drink);
+      const isHidden = drink.hidden === 1;
+
+      // For guests: only show drinks that can be made AND are not hidden
+      if (!isOwner) {
+        return canMake && !isHidden;
+      }
+
+      // For owner with filter: only show drinks that can be made
+      if (filterCanMake) {
+        return canMake;
+      }
+
+      // For owner without filter: show all
+      return true;
+    });
+  }, [drinks, stock, isOwner, filterCanMake]);
+
   const handleAddToShoppingList = async (ingredientName: string) => {
     try {
       const res = await fetch("/api/shopping", {
@@ -187,14 +242,25 @@ export function Browse() {
         />
       </div>
 
-      <button
-        className="btn btn-secondary"
-        style={{ width: "100%", marginBottom: "1rem" }}
-        onClick={handleRandom}
-        disabled={loading || count === 0}
-      >
-        🎲 Random Drink
-      </button>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+        <button
+          className="btn btn-secondary"
+          style={{ flex: 1 }}
+          onClick={handleRandom}
+          disabled={loading || count === 0}
+        >
+          🎲 Random
+        </button>
+        {isOwner && (
+          <button
+            className={`btn ${filterCanMake ? "btn-primary" : "btn-secondary"}`}
+            style={{ flex: 1 }}
+            onClick={() => setFilterCanMake(!filterCanMake)}
+          >
+            {filterCanMake ? "Can Make" : "All Drinks"}
+          </button>
+        )}
+      </div>
 
       {loading && (
         <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
@@ -202,21 +268,46 @@ export function Browse() {
         </div>
       )}
 
-      {!loading && drinks.length > 0 && (
+      {!loading && filteredDrinks.length > 0 && (
         <div className="grid grid-2">
-          {drinks.map((drink) => (
-            <div
-              key={drink.id}
-              className="card"
-              onClick={() => setSelectedDrink(drink)}
-              style={{ cursor: "pointer" }}
-            >
-              {drink.image_url && (
-                <img
-                  src={drink.image_url}
-                  alt={drink.name}
-                  className="drink-image"
-                  style={{ marginBottom: "0.75rem" }}
+          {filteredDrinks.map((drink) => {
+            const canMake = canMakeDrink(drink);
+            const isHidden = drink.hidden === 1;
+            const isGhosted = isOwner && (!canMake || isHidden);
+
+            return (
+              <div
+                key={drink.id}
+                className="card"
+                onClick={() => setSelectedDrink(drink)}
+                style={{
+                  cursor: "pointer",
+                  opacity: isGhosted ? 0.5 : 1,
+                  position: "relative",
+                }}
+              >
+                {isOwner && isHidden && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "0.5rem",
+                      right: "0.5rem",
+                      fontSize: "1rem",
+                      zIndex: 1,
+                    }}
+                  >
+                    👁️‍🗨️
+                  </div>
+                )}
+                {drink.image_url && (
+                  <img
+                    src={drink.image_url}
+                    alt={drink.name}
+                    className="drink-image"
+                    style={{
+                      marginBottom: "0.75rem",
+                      filter: isGhosted ? "grayscale(70%)" : "none",
+                    }}
                 />
               )}
               <div style={{ fontWeight: 600 }}>{drink.name}</div>
@@ -228,10 +319,15 @@ export function Browse() {
         </div>
       )}
 
-      {!loading && search.length >= 2 && drinks.length === 0 && (
+      {!loading && search.length >= 2 && filteredDrinks.length === 0 && (
         <div className="empty-state">
           <div className="empty-state-icon">🔍</div>
           <p>No drinks found for "{search}"</p>
+          {!isOwner && drinks.length > 0 && (
+            <p style={{ fontSize: "0.875rem", marginTop: "0.5rem" }}>
+              ({drinks.length} drinks exist but require missing ingredients)
+            </p>
+          )}
         </div>
       )}
 
@@ -335,17 +431,26 @@ export function Browse() {
               </div>
             )}
 
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem", flexWrap: "wrap" }}>
               <button
                 className="btn btn-secondary"
-                style={{ flex: 1 }}
+                style={{ flex: "1 1 45%" }}
                 onClick={() => setSelectedDrink(null)}
               >
                 Close
               </button>
+              {isOwner && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ flex: "1 1 45%" }}
+                  onClick={() => handleToggleHidden(selectedDrink)}
+                >
+                  {selectedDrink.hidden ? "Show" : "Hide"}
+                </button>
+              )}
               <button
                 className="btn btn-primary"
-                style={{ flex: 1 }}
+                style={{ flex: "1 1 100%" }}
                 onClick={() => handleImport(selectedDrink)}
                 disabled={importing === selectedDrink.id}
               >
