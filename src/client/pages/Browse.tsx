@@ -244,21 +244,35 @@ export function Browse() {
     }
   };
 
+  // Normalize ingredient name by removing common prefixes like "Fresh", "Freshly Squeezed", measure words that leaked in
+  const normalizeIngredientName = (name: string): string => {
+    let normalized = name.toLowerCase().trim();
+    // Remove "freshly squeezed" or "fresh" prefix
+    normalized = normalized.replace(/^freshly\s+squeezed\s+/i, "");
+    normalized = normalized.replace(/^fresh\s+/i, "");
+    // Remove "thin slices", "slices", "slice" etc.
+    normalized = normalized.replace(/^(?:thin\s+)?slices?\s+(?:of\s+)?/i, "");
+    // Remove measure words that might have leaked into the name (dash, drop, splash, shot, jigger)
+    normalized = normalized.replace(/^(?:dash(?:es)?|drop(?:s)?|splash(?:es)?|shot(?:s)?|jigger(?:s)?)\s+(?:of\s+)?/i, "");
+    return normalized.trim();
+  };
+
   // Find matching stock item by name or aliases (case insensitive, partial match)
   const findStockMatch = (ingredientName: string): StockItem | undefined => {
-    const lower = ingredientName.toLowerCase();
+    const lower = normalizeIngredientName(ingredientName);
     return stock.find((s) => {
-      // Check name
+      const stockLower = normalizeIngredientName(s.name);
+      // Check name (using normalized names for better matching)
       if (
-        s.name.toLowerCase() === lower ||
-        s.name.toLowerCase().includes(lower) ||
-        lower.includes(s.name.toLowerCase())
+        stockLower === lower ||
+        stockLower.includes(lower) ||
+        lower.includes(stockLower)
       ) {
         return true;
       }
       // Check aliases
       if (s.aliases) {
-        const aliasList = s.aliases.split(",").map((a) => a.trim().toLowerCase());
+        const aliasList = s.aliases.split(",").map((a) => normalizeIngredientName(a));
         return aliasList.some(
           (alias) =>
             alias === lower ||
@@ -456,6 +470,8 @@ export function Browse() {
       if (res.status === 409) {
         showToast(`${ingredientName} already in shopping list`);
       } else if (res.ok) {
+        const newItem = await res.json();
+        setShoppingList((prev) => [...prev, newItem]);
         showToast(`Added ${ingredientName} to shopping list`);
       } else {
         showToast("Failed to add", "error");
@@ -723,9 +739,20 @@ export function Browse() {
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             style={{ opacity: 0.5, fontSize: "0.75rem" }}
-                            title="Search on Google"
+                            title="Search brands"
                           >
                             🔍
+                          </a>
+                          {/* Substitute search icon */}
+                          <a
+                            href={`https://www.google.com/search?q=${encodeURIComponent(ing.name + " substitute cocktail")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ opacity: 0.5, fontSize: "0.75rem" }}
+                            title="Search substitutes"
+                          >
+                            🔄
                           </a>
                           {/* Stock status badge */}
                           {stockMatch && (
@@ -777,13 +804,31 @@ export function Browse() {
                           </button>
                         )}
                         {!stockMatch && !swap && (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{ padding: "0.5rem 0.75rem", fontSize: "0.75rem" }}
-                            onClick={() => handleAddToShoppingList(ing.name)}
-                          >
-                            + Shop
-                          </button>
+                          isOnShoppingList(ing.name) ? (
+                            <span
+                              style={{
+                                padding: "0.5rem 0.75rem",
+                                fontSize: "0.75rem",
+                                background: "rgba(34, 197, 94, 0.2)",
+                                color: "var(--success)",
+                                borderRadius: "0.5rem",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.25rem",
+                              }}
+                              title="Already on shopping list"
+                            >
+                              🛒 ✓
+                            </span>
+                          ) : (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: "0.5rem 0.75rem", fontSize: "0.75rem" }}
+                              onClick={() => handleAddToShoppingList(ing.name)}
+                            >
+                              + Shop
+                            </button>
+                          )
                         )}
                       </div>
                     </div>

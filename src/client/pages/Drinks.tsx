@@ -82,6 +82,9 @@ export function Drinks() {
   const [stock, setStock] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
   const [selectedDrink, setSelectedDrink] = useState<DrinkItem | null>(null);
   const [editingDrink, setEditingDrink] = useState<DrinkItem | null>(null);
   const [filter, setFilter] = useState("All");
@@ -136,6 +139,31 @@ export function Drinks() {
       if (ing.optional) return false;
       return !hasEnoughStock(ing);
     }).length;
+  };
+
+  const handleImportUrl = async () => {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    try {
+      const res = await fetch("/api/import-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: importUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.drink) {
+        setDrinks((prev) => [...prev, data.drink]);
+        showToast(`Imported "${data.drink.name}"!`);
+        setShowImportModal(false);
+        setImportUrl("");
+      } else {
+        showToast(data.error || "Failed to import", "error");
+      }
+    } catch (err) {
+      showToast("Failed to import", "error");
+    } finally {
+      setImporting(false);
+    }
   };
 
   const handleAdd = () => {
@@ -331,6 +359,9 @@ export function Drinks() {
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <button className="btn btn-secondary" onClick={() => navigate("/browse")}>
             Find
+          </button>
+          <button className="btn btn-secondary" onClick={() => setShowImportModal(true)}>
+            URL
           </button>
           <button className="btn btn-primary" onClick={handleAdd}>
             + Add
@@ -673,6 +704,40 @@ export function Drinks() {
               </button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSave}>
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import URL Modal */}
+      {showImportModal && (
+        <div className="modal-overlay" onMouseDown={() => setShowImportModal(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()} style={{ maxWidth: "450px" }}>
+            <h2 className="modal-title">Import from URL</h2>
+            <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
+              Paste a link from makemeacocktail.com
+            </p>
+            <div className="form-group">
+              <input
+                className="input"
+                placeholder="https://makemeacocktail.com/cocktail/..."
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleImportUrl()}
+              />
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowImportModal(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                onClick={handleImportUrl}
+                disabled={importing || !importUrl.trim()}
+              >
+                {importing ? "Importing..." : "Import"}
               </button>
             </div>
           </div>

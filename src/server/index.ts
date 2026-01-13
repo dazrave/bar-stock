@@ -392,21 +392,35 @@ app.get("/api/cocktaildb/count", requireAuth(true), (c) => {
   return c.json({ count: result?.count || 0 });
 });
 
+// Normalize ingredient name by removing common prefixes like "Fresh", "Freshly Squeezed", measure words that leaked in, etc.
+const normalizeIngredientName = (name: string): string => {
+  let normalized = name.toLowerCase().trim();
+  // Remove "freshly squeezed" or "fresh" prefix
+  normalized = normalized.replace(/^freshly\s+squeezed\s+/i, "");
+  normalized = normalized.replace(/^fresh\s+/i, "");
+  // Remove "thin slices", "slices", "slice" etc.
+  normalized = normalized.replace(/^(?:thin\s+)?slices?\s+(?:of\s+)?/i, "");
+  // Remove measure words that might have leaked into the name (dash, drop, splash, shot, jigger)
+  normalized = normalized.replace(/^(?:dash(?:es)?|drop(?:s)?|splash(?:es)?|shot(?:s)?|jigger(?:s)?)\s+(?:of\s+)?/i, "");
+  return normalized.trim();
+};
+
 // Helper to fuzzy match ingredient name to stock (including aliases)
 const findStockMatch = (ingredientName: string, stockItems: Array<{ id: number; name: string; aliases: string | null }>) => {
-  const lower = ingredientName.toLowerCase();
+  const lower = normalizeIngredientName(ingredientName);
   return stockItems.find((s) => {
-    // Check name
+    const stockLower = normalizeIngredientName(s.name);
+    // Check name (using normalized names for better matching)
     if (
-      s.name.toLowerCase() === lower ||
-      s.name.toLowerCase().includes(lower) ||
-      lower.includes(s.name.toLowerCase())
+      stockLower === lower ||
+      stockLower.includes(lower) ||
+      lower.includes(stockLower)
     ) {
       return true;
     }
     // Check aliases
     if (s.aliases) {
-      const aliasList = s.aliases.split(",").map((a) => a.trim().toLowerCase());
+      const aliasList = s.aliases.split(",").map((a) => normalizeIngredientName(a));
       return aliasList.some(
         (alias) =>
           alias === lower ||
@@ -938,6 +952,171 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
   }
 
   return c.json({ synced, skipped, errors: errors.length > 0 ? errors : undefined });
+});
+
+// ============ IMPORT FROM URL ============
+
+// Import a cocktail from makemeacocktail.com
+app.post("/api/import-url", requireAuth(), async (c) => {
+  const { url } = await c.req.json();
+
+  if (!url || !url.includes("makemeacocktail.com/cocktail/")) {
+    return c.json({ error: "Invalid URL. Please provide a makemeacocktail.com cocktail URL" }, 400);
+  }
+
+  try {
+    // Fetch with browser-like headers
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+      },
+    });
+
+    if (!res.ok) {
+      return c.json({ error: `Failed to fetch URL: ${res.status}` }, 400);
+    }
+
+    const html = await res.text();
+
+    // Extract cocktail name - look for h1 or title
+    let name = "";
+    const h1Match = html.match(/<h1[^>]*class="[^"]*recipe-title[^"]*"[^>]*>([^<]+)<\/h1>/i) ||
+                    html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    if (h1Match) {
+      name = h1Match[1].trim();
+    } else {
+      const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+      if (titleMatch) {
+        name = titleMatch[1].replace(/\s*[-|].*$/, "").trim();
+      }
+    }
+
+    if (!name) {
+      return c.json({ error: "Could not extract cocktail name" }, 400);
+    }
+
+    // Extract image
+    let image_url: string | null = null;
+    const imgPatterns = [
+      /<img[^>]*class="[^"]*recipe-image[^"]*"[^>]*src="([^"]+)"/i,
+      /<img[^>]*src="([^"]+)"[^>]*class="[^"]*recipe[^"]*"/i,
+      /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i,
+      /<img[^>]*src="(https:\/\/[^"]*makemeacocktail[^"]*\/cocktails\/[^"]+)"/i,
+    ];
+    for (const pattern of imgPatterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        image_url = match[1];
+        break;
+      }
+    }
+
+    // Extract ingredients - look for ingredient list
+    const ingredients: Array<{ name: string; measure: string }> = [];
+
+    // Pattern 1: ingredient items with amount and name
+    const ingredientPattern = /<li[^>]*class="[^"]*ingredient[^"]*"[^>]*>[\s\S]*?<span[^>]*class="[^"]*amount[^"]*"[^>]*>([^<]*)<\/span>[\s\S]*?<span[^>]*class="[^"]*name[^"]*"[^>]*>([^<]*)<\/span>/gi;
+    let match;
+    while ((match = ingredientPattern.exec(html)) !== null) {
+      const measure = match[1].trim();
+      const ingredientName = match[2].trim();
+      if (ingredientName) {
+        ingredients.push({ name: ingredientName, measure });
+      }
+    }
+
+    // Pattern 2: simpler list items
+    if (ingredients.length === 0) {
+      const simplePattern = /<li[^>]*class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+      while ((match = simplePattern.exec(html)) !== null) {
+        const text = match[1].replace(/<[^>]+>/g, " ").trim();
+        // Try to split measure from name
+        const measureMatch = text.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|parts?|shots?)?)\s+(.+)$/i);
+        if (measureMatch) {
+          ingredients.push({ name: measureMatch[2].trim(), measure: measureMatch[1].trim() });
+        } else {
+          ingredients.push({ name: text, measure: "" });
+        }
+      }
+    }
+
+    // Pattern 3: look for data attributes or JSON
+    if (ingredients.length === 0) {
+      const jsonMatch = html.match(/ingredients['"]\s*:\s*\[([^\]]+)\]/i);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(`[${jsonMatch[1]}]`);
+          for (const ing of parsed) {
+            if (typeof ing === "object" && ing.name) {
+              ingredients.push({ name: ing.name, measure: ing.amount || ing.measure || "" });
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // Extract method/instructions
+    let instructions = "";
+    const methodPatterns = [
+      /<div[^>]*class="[^"]*method[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+      /<div[^>]*class="[^"]*instructions[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+      /<section[^>]*class="[^"]*method[^"]*"[^>]*>([\s\S]*?)<\/section>/i,
+      /<ol[^>]*class="[^"]*method[^"]*"[^>]*>([\s\S]*?)<\/ol>/i,
+    ];
+    for (const pattern of methodPatterns) {
+      const methodMatch = html.match(pattern);
+      if (methodMatch) {
+        // Clean up HTML tags, keep list structure
+        instructions = methodMatch[1]
+          .replace(/<li[^>]*>/gi, "\n• ")
+          .replace(/<\/li>/gi, "")
+          .replace(/<p[^>]*>/gi, "\n")
+          .replace(/<\/p>/gi, "")
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<[^>]+>/g, "")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+        break;
+      }
+    }
+
+    // Get stock for auto-linking
+    const stockItems = stockQueries.getAll.all();
+
+    // Create the drink
+    const drink = drinkQueries.create.get(
+      name,
+      "Cocktail",
+      instructions || null,
+      image_url
+    );
+
+    if (drink) {
+      for (const ing of ingredients) {
+        const stockMatch = findStockMatch(ing.name, stockItems);
+        ingredientQueries.create.run(
+          drink.id,
+          stockMatch?.id || null,
+          ing.name,
+          null,
+          ing.measure || null,
+          0
+        );
+      }
+    }
+
+    const savedIngredients = drink ? ingredientQueries.getByDrinkId.all(drink.id) : [];
+    return c.json({
+      success: true,
+      drink: { ...drink, ingredients: savedIngredients },
+      extracted: { name, image_url, ingredients: ingredients.length, instructions: !!instructions }
+    }, 201);
+
+  } catch (err) {
+    return c.json({ error: `Failed to import: ${err}` }, 500);
+  }
 });
 
 // ============ INGREDIENT SWAP ROUTES ============

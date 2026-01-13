@@ -279,74 +279,77 @@ export function Shopping() {
             </div>
           ) : (
             <>
-              <div className="grid">
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {items.map((item) => (
-                  <div key={item.id} className="card">
-                    <div className="shopping-item">
-                      <div className="shopping-item-info">
-                        <div className="shopping-item-name">{item.ingredient_name}</div>
-                        {item.drinks.length > 0 && (
-                          <div className="shopping-item-drinks">
-                            For: {item.drinks.map((d) => d.name).join(", ")}
-                          </div>
-                        )}
+                  <div
+                    key={item.id}
+                    style={{
+                      background: "var(--bg-card)",
+                      borderRadius: "0.5rem",
+                      padding: "0.75rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>{item.ingredient_name}</span>
                         {item.suggested === 1 && (
                           <span
                             style={{
-                              display: "inline-block",
-                              fontSize: "0.75rem",
-                              padding: "0.125rem 0.5rem",
+                              fontSize: "0.625rem",
+                              padding: "0.125rem 0.375rem",
                               background: "rgba(234, 179, 8, 0.2)",
                               color: "var(--warning)",
                               borderRadius: "9999px",
-                              marginTop: "0.25rem",
                             }}
                           >
-                            Low Stock
+                            LOW
                           </span>
                         )}
                         {item.stock_id && (
-                          <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                            Will refill existing bottle
-                          </div>
+                          <span
+                            style={{
+                              fontSize: "0.625rem",
+                              padding: "0.125rem 0.375rem",
+                              background: "rgba(34, 197, 94, 0.2)",
+                              color: "var(--success)",
+                              borderRadius: "9999px",
+                            }}
+                          >
+                            REFILL
+                          </span>
                         )}
                       </div>
+                      {item.drinks.length > 0 && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.125rem" }}>
+                          {item.drinks.map((d) => d.name).join(", ")}
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-                      <button
-                        className="btn btn-primary"
-                        style={{ flex: 1 }}
-                        onClick={() => handleBought(item)}
-                      >
-                        Bought
-                      </button>
-                      <button
-                        className="btn btn-danger btn-sm"
-                        onClick={() => handleRemoveItem(item.id)}
-                      >
-                        X
-                      </button>
-                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      style={{ padding: "0.5rem 0.75rem", minHeight: "2rem" }}
+                      onClick={() => handleBought(item)}
+                    >
+                      ✓
+                    </button>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      style={{ padding: "0.5rem 0.5rem", minHeight: "2rem", minWidth: "2rem" }}
+                      onClick={() => handleRemoveItem(item.id)}
+                    >
+                      ✕
+                    </button>
                   </div>
                 ))}
               </div>
 
-              {items.length > 0 && (
-                <div
-                  style={{
-                    position: "fixed",
-                    bottom: "calc(5rem + env(safe-area-inset-bottom))",
-                    left: 0,
-                    right: 0,
-                    padding: "1rem",
-                    background: "var(--bg-secondary)",
-                    borderTop: "1px solid rgba(255, 255, 255, 0.1)",
-                    display: "flex",
-                    justifyContent: "center",
-                  }}
-                >
-                  <button className="btn btn-primary" onClick={handleBoughtAll}>
-                    Bought All Refillable
+              {items.length > 1 && (
+                <div style={{ marginTop: "1rem", textAlign: "center" }}>
+                  <button className="btn btn-secondary btn-sm" onClick={handleBoughtAll}>
+                    Mark All Refillable as Bought
                   </button>
                 </div>
               )}
@@ -362,54 +365,59 @@ export function Shopping() {
             </div>
           ) : (
             <>
-              <div style={{ marginBottom: "1rem" }}>
-                <button className="btn btn-secondary" onClick={handleAddAllSuggestions}>
+              <div style={{ marginBottom: "0.75rem", textAlign: "center" }}>
+                <button className="btn btn-secondary btn-sm" onClick={handleAddAllSuggestions}>
                   Add All to List
                 </button>
               </div>
-              <div className="grid">
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {suggestions.map((stock) => {
                   const alreadyInList = items.some((i) => i.stock_id === stock.id);
                   return (
-                    <div key={stock.id} className="card">
-                      <div className="shopping-item">
-                        <div
-                          style={{
-                            width: "3rem",
-                            height: "3rem",
-                            borderRadius: "50%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontWeight: "bold",
-                            fontSize: "0.875rem",
-                            background:
-                              stock.percentage <= 10
-                                ? "rgba(239, 68, 68, 0.2)"
-                                : "rgba(234, 179, 8, 0.2)",
-                            color: stock.percentage <= 10 ? "var(--danger)" : "var(--warning)",
-                            flexShrink: 0,
-                          }}
-                        >
-                          {Math.round(stock.percentage)}%
-                        </div>
-                        <div className="shopping-item-info">
-                          <div className="shopping-item-name">{stock.name}</div>
-                          <div style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-                            {formatVolume(stock.current_ml)} / {formatVolume(stock.total_ml)}
-                          </div>
-                          <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
-                            {stock.category}
-                          </div>
+                    <div
+                      key={stock.id}
+                      style={{
+                        background: "var(--bg-card)",
+                        borderRadius: "0.5rem",
+                        padding: "0.75rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "2.5rem",
+                          height: "2.5rem",
+                          borderRadius: "50%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontWeight: "bold",
+                          fontSize: "0.75rem",
+                          background:
+                            stock.percentage <= 10
+                              ? "rgba(239, 68, 68, 0.2)"
+                              : "rgba(234, 179, 8, 0.2)",
+                          color: stock.percentage <= 10 ? "var(--danger)" : "var(--warning)",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {Math.round(stock.percentage)}%
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>{stock.name}</div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                          {formatVolume(stock.current_ml)} / {formatVolume(stock.total_ml)} · {stock.category}
                         </div>
                       </div>
                       <button
-                        className={`btn ${alreadyInList ? "btn-secondary" : "btn-primary"}`}
-                        style={{ marginTop: "1rem", width: "100%" }}
+                        className={`btn ${alreadyInList ? "btn-secondary" : "btn-primary"} btn-sm`}
+                        style={{ padding: "0.5rem 0.75rem", minHeight: "2rem" }}
                         onClick={() => handleAddSuggestion(stock.id)}
                         disabled={alreadyInList}
                       >
-                        {alreadyInList ? "In List" : "+ Add to List"}
+                        {alreadyInList ? "✓" : "+"}
                       </button>
                     </div>
                   );
