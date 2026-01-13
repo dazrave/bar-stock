@@ -14,6 +14,7 @@ import {
   menuDrinkQueries,
   requestQueries,
   settingsQueries,
+  swapQueries,
   type Stock,
   type ShoppingListItem,
   type Menu,
@@ -836,8 +837,8 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
         // Decode any HTML entities
         const decodedText = decodeHtmlEntities(text);
 
-        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Egg white"
-        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|barspoons?|parts?)?)\s+(.+)$/i);
+        // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Tablespoon Absinthe", "Top up Ginger beer"
+        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|tablespoons?|teaspoons?|barspoons?|parts?)?|top\s*up)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({
             measure: measureMatch[1].trim(),
@@ -922,6 +923,57 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
   }
 
   return c.json({ synced, skipped, errors: errors.length > 0 ? errors : undefined });
+});
+
+// ============ INGREDIENT SWAP ROUTES ============
+
+// Get all swaps for a source
+app.get("/api/swaps/:source", requireAuth(), (c) => {
+  const source = c.req.param("source");
+  if (source !== "iba" && source !== "cocktaildb") {
+    return c.json({ error: "Invalid source" }, 400);
+  }
+  const swaps = swapQueries.getAll.all(source);
+  return c.json(swaps);
+});
+
+// Get swaps for a specific drink
+app.get("/api/swaps/:source/:drinkId", requireAuth(), (c) => {
+  const source = c.req.param("source");
+  const drinkId = parseInt(c.req.param("drinkId"));
+  if (source !== "iba" && source !== "cocktaildb") {
+    return c.json({ error: "Invalid source" }, 400);
+  }
+  const swaps = swapQueries.getByDrink.all(source, drinkId);
+  return c.json(swaps);
+});
+
+// Add or update a swap
+app.post("/api/swaps/:source/:drinkId", requireAuth(), async (c) => {
+  const source = c.req.param("source");
+  const drinkId = parseInt(c.req.param("drinkId"));
+  const { original_ingredient, stock_id } = await c.req.json();
+
+  if (source !== "iba" && source !== "cocktaildb") {
+    return c.json({ error: "Invalid source" }, 400);
+  }
+
+  const swap = swapQueries.upsert.get(source, drinkId, original_ingredient, stock_id);
+  return c.json(swap, 201);
+});
+
+// Remove a swap
+app.delete("/api/swaps/:source/:drinkId/:ingredient", requireAuth(), (c) => {
+  const source = c.req.param("source");
+  const drinkId = parseInt(c.req.param("drinkId"));
+  const ingredient = decodeURIComponent(c.req.param("ingredient"));
+
+  if (source !== "iba" && source !== "cocktaildb") {
+    return c.json({ error: "Invalid source" }, 400);
+  }
+
+  swapQueries.delete.run(source, drinkId, ingredient);
+  return c.json({ success: true });
 });
 
 // ============ SHOPPING LIST ROUTES ============

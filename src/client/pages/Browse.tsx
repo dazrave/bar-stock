@@ -40,11 +40,21 @@ interface ShoppingItem {
   ingredient_name: string;
 }
 
+interface Swap {
+  id: number;
+  source: string;
+  drink_id: number;
+  original_ingredient: string;
+  stock_id: number;
+  stock_name: string;
+}
+
 export function Browse() {
   const [source, setSource] = useState<Source>("iba");
   const [drinks, setDrinks] = useState<Drink[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
   const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
+  const [swaps, setSwaps] = useState<Swap[]>([]);
   const [cocktaildbCount, setCocktaildbCount] = useState(0);
   const [ibaCount, setIbaCount] = useState(0);
   const [search, setSearch] = useState("");
@@ -54,6 +64,7 @@ export function Browse() {
   const [importing, setImporting] = useState<number | null>(null);
   const [filterCanMake, setFilterCanMake] = useState(false);
   const [sortBy, setSortBy] = useState<"name" | "available">("name");
+  const [swappingIngredient, setSwappingIngredient] = useState<string | null>(null);
   const { showToast } = useToast();
   const { session } = useAuth();
   const isOwner = session?.type === "owner";
@@ -71,6 +82,14 @@ export function Browse() {
       .then((data) => setShoppingList(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
+
+  // Fetch swaps when source changes
+  useEffect(() => {
+    fetch(`/api/swaps/${source}`)
+      .then((r) => r.json())
+      .then((data) => setSwaps(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [source]);
 
   // Reset search when source changes
   useEffect(() => {
@@ -256,6 +275,73 @@ export function Browse() {
     );
   };
 
+  // Get swap for a specific ingredient in a drink
+  const getSwap = (drinkId: number, ingredientName: string): Swap | undefined => {
+    return swaps.find(
+      (s) => s.drink_id === drinkId && s.original_ingredient.toLowerCase() === ingredientName.toLowerCase()
+    );
+  };
+
+  // Get stock for an ingredient (considering swaps)
+  const getStockForIngredient = (drinkId: number, ingredientName: string): StockItem | undefined => {
+    const swap = getSwap(drinkId, ingredientName);
+    if (swap) {
+      return stock.find((s) => s.id === swap.stock_id);
+    }
+    return findStockMatch(ingredientName);
+  };
+
+  // Get suggested swaps (stock items that could match the ingredient)
+  const getSwapSuggestions = (ingredientName: string): StockItem[] => {
+    const lower = ingredientName.toLowerCase();
+    return stock.filter((s) => {
+      const stockLower = s.name.toLowerCase();
+      // Match if any word in the ingredient is in the stock name or vice versa
+      const ingredientWords = lower.split(/\s+/);
+      const stockWords = stockLower.split(/\s+/);
+      return ingredientWords.some((w) => stockLower.includes(w) && w.length > 2) ||
+        stockWords.some((w) => lower.includes(w) && w.length > 2);
+    });
+  };
+
+  // Add a swap
+  const handleAddSwap = async (drinkId: number, ingredientName: string, stockId: number) => {
+    try {
+      const res = await fetch(`/api/swaps/${source}/${drinkId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ original_ingredient: ingredientName, stock_id: stockId }),
+      });
+      if (res.ok) {
+        const swap = await res.json();
+        const stockItem = stock.find((s) => s.id === stockId);
+        setSwaps((prev) => [
+          ...prev.filter((s) => !(s.drink_id === drinkId && s.original_ingredient === ingredientName)),
+          { ...swap, stock_name: stockItem?.name || "" },
+        ]);
+        showToast(`Swapped to ${stockItem?.name}`);
+        setSwappingIngredient(null);
+      }
+    } catch {
+      showToast("Failed to add swap", "error");
+    }
+  };
+
+  // Remove a swap
+  const handleRemoveSwap = async (drinkId: number, ingredientName: string) => {
+    try {
+      await fetch(`/api/swaps/${source}/${drinkId}/${encodeURIComponent(ingredientName)}`, {
+        method: "DELETE",
+      });
+      setSwaps((prev) => prev.filter(
+        (s) => !(s.drink_id === drinkId && s.original_ingredient.toLowerCase() === ingredientName.toLowerCase())
+      ));
+      showToast("Swap removed");
+    } catch {
+      showToast("Failed to remove swap", "error");
+    }
+  };
+
   // Count how many ingredients we have vs total, and if missing ones are on shopping list
   const getIngredientCount = (drink: Drink): { have: number; total: number; allMissingOnList: boolean } => {
     const ingredients = parseIngredients(drink.ingredients_json);
@@ -266,7 +352,8 @@ export function Browse() {
     let missingOnListCount = 0;
 
     for (const ing of ingredients) {
-      const stockMatch = findStockMatch(ing.name);
+      // Check for swap first, then fuzzy match
+      const stockMatch = getStockForIngredient(drink.id, ing.name);
       if (stockMatch && stockMatch.current_ml > 0) {
         have++;
       } else {
@@ -581,69 +668,149 @@ export function Browse() {
                 INGREDIENTS
               </h3>
               {parseIngredients(selectedDrink.ingredients_json).map((ing, i) => {
-                const stockMatch = findStockMatch(ing.name);
+                const swap = getSwap(selectedDrink.id, ing.name);
+                const stockMatch = getStockForIngredient(selectedDrink.id, ing.name);
                 const hasStock = stockMatch && stockMatch.current_ml > 0;
                 const percentage = stockMatch
                   ? Math.round((stockMatch.current_ml / stockMatch.total_ml) * 100)
                   : 0;
+                const suggestions = !stockMatch ? getSwapSuggestions(ing.name) : [];
+                const isSwapping = swappingIngredient === ing.name;
 
                 return (
                   <div
                     key={i}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
                       padding: "0.75rem 0",
                       borderBottom: "1px solid rgba(255,255,255,0.1)",
                     }}
                   >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                        <span>{ing.name}</span>
-                        {stockMatch && (
-                          <span
-                            style={{
-                              fontSize: "0.75rem",
-                              padding: "0.125rem 0.5rem",
-                              borderRadius: "9999px",
-                              background: hasStock
-                                ? percentage > 25
-                                  ? "rgba(34, 197, 94, 0.2)"
-                                  : "rgba(234, 179, 8, 0.2)"
-                                : "rgba(239, 68, 68, 0.2)",
-                              color: hasStock
-                                ? percentage > 25
-                                  ? "var(--success)"
-                                  : "var(--warning)"
-                                : "var(--danger)",
-                            }}
-                          >
-                            {hasStock ? `${formatVolume(stockMatch.current_ml)} (${percentage}%)` : "Empty"}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                          {/* Ingredient name with swap indicator */}
+                          <span style={{ color: swap ? "var(--primary)" : undefined }}>
+                            {swap ? (
+                              <span title={`Original: ${ing.name}`}>
+                                <s style={{ opacity: 0.5, marginRight: "0.25rem" }}>{ing.name}</s>
+                                → {swap.stock_name}
+                              </span>
+                            ) : (
+                              ing.name
+                            )}
                           </span>
+                          {/* Google search icon */}
+                          <a
+                            href={`https://www.google.com/search?q=${encodeURIComponent(ing.name + " drink")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ opacity: 0.5, fontSize: "0.75rem" }}
+                            title="Search on Google"
+                          >
+                            🔍
+                          </a>
+                          {/* Stock status badge */}
+                          {stockMatch && (
+                            <span
+                              style={{
+                                fontSize: "0.75rem",
+                                padding: "0.125rem 0.5rem",
+                                borderRadius: "9999px",
+                                background: hasStock
+                                  ? percentage > 25
+                                    ? "rgba(34, 197, 94, 0.2)"
+                                    : "rgba(234, 179, 8, 0.2)"
+                                  : "rgba(239, 68, 68, 0.2)",
+                                color: hasStock
+                                  ? percentage > 25
+                                    ? "var(--success)"
+                                    : "var(--warning)"
+                                  : "var(--danger)",
+                              }}
+                            >
+                              {hasStock ? `${formatVolume(stockMatch.current_ml)} (${percentage}%)` : "Empty"}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                          {formatMeasureWithMl(ing.measure)}
+                        </div>
+                      </div>
+                      {/* Action buttons */}
+                      <div style={{ display: "flex", gap: "0.25rem" }}>
+                        {isOwner && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: "0.5rem", fontSize: "0.75rem" }}
+                            onClick={() => setSwappingIngredient(isSwapping ? null : ing.name)}
+                            title="Swap ingredient"
+                          >
+                            🔄
+                          </button>
+                        )}
+                        {swap && isOwner && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: "0.5rem", fontSize: "0.75rem" }}
+                            onClick={() => handleRemoveSwap(selectedDrink.id, ing.name)}
+                            title="Remove swap"
+                          >
+                            ✕
+                          </button>
+                        )}
+                        {!stockMatch && !swap && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: "0.5rem 0.75rem", fontSize: "0.75rem" }}
+                            onClick={() => handleAddToShoppingList(ing.name)}
+                          >
+                            + Shop
+                          </button>
                         )}
                       </div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-                        {formatMeasureWithMl(ing.measure)}
-                      </div>
                     </div>
-                    {!stockMatch && (
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: "0.5rem 0.75rem", fontSize: "0.75rem" }}
-                        onClick={() => handleAddToShoppingList(ing.name)}
-                      >
-                        + Shop
-                      </button>
-                    )}
-                    {stockMatch && !hasStock && (
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ padding: "0.5rem 0.75rem", fontSize: "0.75rem" }}
-                        onClick={() => handleAddToShoppingList(ing.name)}
-                      >
-                        + Shop
-                      </button>
+                    {/* Swap UI */}
+                    {isSwapping && isOwner && (
+                      <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "rgba(255,255,255,0.05)", borderRadius: "0.5rem" }}>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>
+                          Swap with:
+                        </div>
+                        {suggestions.length > 0 && (
+                          <div style={{ marginBottom: "0.5rem" }}>
+                            <div style={{ fontSize: "0.625rem", color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Suggested:</div>
+                            <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+                              {suggestions.slice(0, 3).map((s) => (
+                                <button
+                                  key={s.id}
+                                  className="btn btn-primary btn-sm"
+                                  style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }}
+                                  onClick={() => handleAddSwap(selectedDrink.id, ing.name, s.id)}
+                                >
+                                  {s.name}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <select
+                          className="select"
+                          style={{ width: "100%", fontSize: "0.875rem" }}
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleAddSwap(selectedDrink.id, ing.name, parseInt(e.target.value));
+                            }
+                          }}
+                        >
+                          <option value="">Select from stock...</option>
+                          {stock.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({formatVolume(s.current_ml)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     )}
                   </div>
                 );

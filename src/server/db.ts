@@ -137,6 +137,17 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS ingredient_swaps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL CHECK (source IN ('iba', 'cocktaildb')),
+    drink_id INTEGER NOT NULL,
+    original_ingredient TEXT NOT NULL,
+    stock_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (stock_id) REFERENCES stock(id) ON DELETE CASCADE,
+    UNIQUE(source, drink_id, original_ingredient)
+  );
 `);
 
 // Insert default passcodes if none exist
@@ -326,6 +337,15 @@ export interface DrinkRequest {
 export interface AppSetting {
   key: string;
   value: string;
+}
+
+export interface IngredientSwap {
+  id: number;
+  source: "iba" | "cocktaildb";
+  drink_id: number;
+  original_ingredient: string;
+  stock_id: number;
+  created_at: string;
 }
 
 // Stock queries
@@ -604,6 +624,31 @@ export const settingsQueries = {
     "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value RETURNING *"
   ),
   delete: db.query<null, [string]>("DELETE FROM app_settings WHERE key = ?"),
+};
+
+// Ingredient swap queries
+export const swapQueries = {
+  getByDrink: db.query<IngredientSwap & { stock_name: string }, [string, number]>(`
+    SELECT s.*, st.name as stock_name
+    FROM ingredient_swaps s
+    JOIN stock st ON st.id = s.stock_id
+    WHERE s.source = ? AND s.drink_id = ?
+  `),
+  getAll: db.query<IngredientSwap & { stock_name: string }, [string]>(`
+    SELECT s.*, st.name as stock_name
+    FROM ingredient_swaps s
+    JOIN stock st ON st.id = s.stock_id
+    WHERE s.source = ?
+  `),
+  upsert: db.query<IngredientSwap, [string, number, string, number]>(
+    `INSERT INTO ingredient_swaps (source, drink_id, original_ingredient, stock_id)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(source, drink_id, original_ingredient) DO UPDATE SET stock_id = excluded.stock_id
+     RETURNING *`
+  ),
+  delete: db.query<null, [string, number, string]>(
+    "DELETE FROM ingredient_swaps WHERE source = ? AND drink_id = ? AND original_ingredient = ?"
+  ),
 };
 
 export { db };
