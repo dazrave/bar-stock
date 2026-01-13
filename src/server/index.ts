@@ -616,31 +616,60 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
     return urls;
   };
 
+  // Helper to decode HTML entities
+  const decodeHtmlEntities = (text: string): string => {
+    return text
+      .replace(/&#8211;/g, "–")
+      .replace(/&#8212;/g, "—")
+      .replace(/&#8216;/g, "'")
+      .replace(/&#8217;/g, "'")
+      .replace(/&#8220;/g, '"')
+      .replace(/&#8221;/g, '"')
+      .replace(/&#38;/g, "&")
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&ndash;/g, "–")
+      .replace(/&mdash;/g, "—")
+      .replace(/&lsquo;/g, "'")
+      .replace(/&rsquo;/g, "'")
+      .replace(/&ldquo;/g, '"')
+      .replace(/&rdquo;/g, '"')
+      .trim();
+  };
+
   // Helper to extract cocktail details from detail page
   const extractCocktailDetails = (html: string, url: string, category: string) => {
     const slug = url.split("/iba-cocktail/")[1]?.replace(/\/$/, "") || "";
 
-    // Extract name from title - try multiple patterns
+    // Extract name from h1 first (most reliable), then title
     let name = slug;
-    const titleMatch = html.match(/<title>([^<|]+)/i);
-    if (titleMatch) {
-      name = titleMatch[1].trim().replace(/\s*[-–]\s*IBA.*$/i, "").trim();
-    }
     const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
     if (h1Match) {
-      name = h1Match[1].trim();
+      name = decodeHtmlEntities(h1Match[1].trim());
+    } else {
+      const titleMatch = html.match(/<title>([^<|]+)/i);
+      if (titleMatch) {
+        name = decodeHtmlEntities(titleMatch[1].trim().replace(/\s*[-–—]\s*IBA.*$/i, "").trim());
+      }
     }
 
-    // Extract image URL - look for featured image or content image
+    // Extract image URL - prefer webp images from wp-content/uploads
     let image_url: string | null = null;
-    // Try to find wp-content/uploads images
-    const imgMatches = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+)"/gi);
-    if (imgMatches) {
-      for (const match of imgMatches) {
-        const urlMatch = match.match(/src="([^"]+)"/);
-        if (urlMatch && urlMatch[1] && !urlMatch[1].includes('logo') && !urlMatch[1].includes('icon')) {
-          image_url = urlMatch[1];
-          break;
+    // First try to find webp images (preferred)
+    const webpMatch = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+\.webp)"/i);
+    if (webpMatch) {
+      image_url = webpMatch[1];
+    } else {
+      // Fallback to any wp-content/uploads image that's not logo/icon
+      const imgMatches = html.match(/src="(https:\/\/iba-world\.com\/wp-content\/uploads\/[^"]+)"/gi);
+      if (imgMatches) {
+        for (const match of imgMatches) {
+          const urlMatch = match.match(/src="([^"]+)"/);
+          if (urlMatch && urlMatch[1] && !urlMatch[1].includes('logo') && !urlMatch[1].includes('icon')) {
+            image_url = urlMatch[1];
+            break;
+          }
         }
       }
     }
@@ -697,37 +726,58 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
       }
     }
 
-    // Extract ingredients - look for <ul><li> patterns
+    // Extract ingredients - look for <ul><li> patterns or text with measurements
     const ingredients: Array<{ name: string; measure: string }> = [];
 
-    // Try to find ingredients section
+    // Try to find ingredients section - multiple patterns for IBA site structure
     const ingredientPatterns = [
+      // h4 Ingredients followed by ul
+      /<h4[^>]*>\s*Ingredients?\s*<\/h4>\s*<ul[^>]*>([\s\S]*?)<\/ul>/i,
+      // h3/h2 Ingredients followed by ul
       /Ingredients?\s*:?\s*<\/h\d>\s*<ul[^>]*>([\s\S]*?)<\/ul>/i,
-      /<ul[^>]*class="[^"]*ingredients[^"]*"[^>]*>([\s\S]*?)<\/ul>/i,
-      /<ul[^>]*>([\s\S]*?)<\/ul>/i, // Fallback to first ul
+      // Any ul with class containing ingredient
+      /<ul[^>]*class="[^"]*ingredients?[^"]*"[^>]*>([\s\S]*?)<\/ul>/i,
+      // ul after elementor shortcode widget with measurements
+      /elementor-widget-shortcode[^>]*>[\s\S]*?<ul[^>]*>([\s\S]*?)<\/ul>/i,
+      // Any ul that contains ml/cl measurements
+      /<ul[^>]*>([\s\S]*?)<\/ul>/gi,
     ];
 
     let ingredientHtml = "";
     for (const pattern of ingredientPatterns) {
-      const match = html.match(pattern);
-      if (match) {
-        ingredientHtml = match[1];
-        // Check if this looks like ingredients (has measurements)
-        if (/\d+\s*(?:ml|cl|oz|dash)/i.test(ingredientHtml)) {
+      if (pattern.global) {
+        // For global patterns, find the one with measurements
+        let match;
+        const regex = new RegExp(pattern.source, 'gi');
+        while ((match = regex.exec(html)) !== null) {
+          if (/\d+\s*(?:ml|cl|oz|dash)/i.test(match[1])) {
+            ingredientHtml = match[1];
+            break;
+          }
+        }
+        if (ingredientHtml) break;
+      } else {
+        const match = html.match(pattern);
+        if (match && /\d+\s*(?:ml|cl|oz|dash)/i.test(match[1])) {
+          ingredientHtml = match[1];
           break;
         }
       }
     }
 
     if (ingredientHtml) {
-      const liRegex = /<li[^>]*>([^<]+)<\/li>/gi;
+      const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
       let liMatch;
       while ((liMatch = liRegex.exec(ingredientHtml)) !== null) {
-        const text = liMatch[1].trim();
+        // Strip any HTML tags from the li content
+        const text = liMatch[1].replace(/<[^>]+>/g, "").trim();
         if (!text) continue;
 
+        // Decode any HTML entities
+        const decodedText = decodeHtmlEntities(text);
+
         // Parse various formats: "50 ml Vodka", "2 dashes Angostura", "1 Egg white"
-        const measureMatch = text.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|barspoons?|parts?)?)\s+(.+)$/i);
+        const measureMatch = decodedText.match(/^([\d.\/]+\s*(?:ml|cl|oz|dashes?|drops?|tsp|tbsp|barspoons?|parts?)?)\s+(.+)$/i);
         if (measureMatch) {
           ingredients.push({
             measure: measureMatch[1].trim(),
@@ -735,7 +785,27 @@ app.post("/api/iba/sync", requireAuth(), async (c) => {
           });
         } else {
           // Try to extract just the ingredient name
-          ingredients.push({ measure: "", name: text });
+          ingredients.push({ measure: "", name: decodedText });
+        }
+      }
+    }
+
+    // If no ingredients found via ul/li, try finding raw text with measurements
+    if (ingredients.length === 0) {
+      const measurementLines = html.match(/>\s*(\d+\s*(?:ml|cl)\s+[A-Z][^<]{5,50})\s*</gi);
+      if (measurementLines) {
+        for (const line of measurementLines) {
+          const textMatch = line.match(/>\s*(.+?)\s*</);
+          if (textMatch) {
+            const text = decodeHtmlEntities(textMatch[1].trim());
+            const measureMatch = text.match(/^([\d.\/]+\s*(?:ml|cl|oz))\s+(.+)$/i);
+            if (measureMatch) {
+              ingredients.push({
+                measure: measureMatch[1].trim(),
+                name: measureMatch[2].trim(),
+              });
+            }
+          }
         }
       }
     }
