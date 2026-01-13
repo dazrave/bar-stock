@@ -53,6 +53,7 @@ export function Browse() {
   const [selectedDrink, setSelectedDrink] = useState<Drink | null>(null);
   const [importing, setImporting] = useState<number | null>(null);
   const [filterCanMake, setFilterCanMake] = useState(false);
+  const [sortBy, setSortBy] = useState<"name" | "available">("name");
   const { showToast } = useToast();
   const { session } = useAuth();
   const isOwner = session?.type === "owner";
@@ -303,9 +304,9 @@ export function Browse() {
     }
   };
 
-  // Filter drinks based on role and canMake status
+  // Filter and sort drinks based on role, canMake status, and sort preference
   const filteredDrinks = useMemo(() => {
-    return drinks.filter((drink) => {
+    const filtered = drinks.filter((drink) => {
       const canMake = canMakeDrink(drink);
       const isHidden = drink.hidden === 1;
 
@@ -322,7 +323,24 @@ export function Browse() {
       // For owner without filter: show all
       return true;
     });
-  }, [drinks, stock, isOwner, filterCanMake]);
+
+    // Sort the filtered drinks
+    if (sortBy === "available") {
+      return filtered.sort((a, b) => {
+        const countA = getIngredientCount(a);
+        const countB = getIngredientCount(b);
+        // Sort by percentage available (most available first)
+        const pctA = countA.total > 0 ? countA.have / countA.total : 0;
+        const pctB = countB.total > 0 ? countB.have / countB.total : 0;
+        if (pctB !== pctA) return pctB - pctA;
+        // If same percentage, sort by absolute count (more ingredients available first)
+        return countB.have - countA.have;
+      });
+    }
+
+    // Default: sort by name
+    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  }, [drinks, stock, shoppingList, isOwner, filterCanMake, sortBy]);
 
   const handleAddToShoppingList = async (ingredientName: string) => {
     try {
@@ -409,7 +427,7 @@ export function Browse() {
           onClick={handleShowAll}
           disabled={loading || currentCount === 0}
         >
-          📋 Show All
+          Show All
         </button>
         <button
           className="btn btn-secondary"
@@ -417,7 +435,7 @@ export function Browse() {
           onClick={handleRandom}
           disabled={loading || currentCount === 0}
         >
-          🎲 Random
+          Random
         </button>
         {isOwner && (
           <button
@@ -425,9 +443,17 @@ export function Browse() {
             style={{ flex: 1 }}
             onClick={() => setFilterCanMake(!filterCanMake)}
           >
-            {filterCanMake ? "Can Make" : "All Drinks"}
+            {filterCanMake ? "Can Make" : "All"}
           </button>
         )}
+        <button
+          className={`btn ${sortBy === "available" ? "btn-primary" : "btn-secondary"}`}
+          style={{ flex: 1 }}
+          onClick={() => setSortBy(sortBy === "name" ? "available" : "name")}
+          disabled={filteredDrinks.length === 0}
+        >
+          {sortBy === "available" ? "By Stock" : "A-Z"}
+        </button>
       </div>
 
       {loading && (
