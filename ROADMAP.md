@@ -14,6 +14,23 @@
 
 ---
 
+## Build Priority (Agreed)
+
+When limits reset, tackle in this order:
+
+| # | Task | Why |
+|---|------|-----|
+| 1 | **Fix IBA scraper** | Quick win, get quality content working |
+| 2 | **Category counts + auto-fill** | UX polish, less typing |
+| 3 | **Usage tracking** | Simple counters, foundation for stats |
+| 4 | **Menus system** | Create curated drink lists |
+| 5 | **Guest queue** | Party-ready ordering |
+| 6 | **Kiosk mode** | Tablet at bar for guests |
+| 7 | **Running low warnings** | "Only 2 left!" urgency |
+| 8 | **Misc ingredients** | Lemons, garnishes (count-based) |
+
+---
+
 ## Planned Features
 
 ### Phase 1: Usage Tracking (SIMPLE)
@@ -143,6 +160,16 @@ CREATE TABLE drink_requests (
 - [ ] Sound/vibration notification
 
 **Decided**: Simple name prompt, no guest accounts. Queue managed by owner.
+
+#### Kiosk / Party Mode
+- [ ] Dedicated `/kiosk` route (full-screen, no nav)
+- [ ] Large drink cards with photos
+- [ ] Big "Request" buttons (touch-friendly)
+- [ ] Shows active menu only
+- [ ] Queue status at bottom: "3 drinks being made"
+- [ ] "Bar Closed" overlay when queue is off
+- [ ] Auto-refresh to stay current
+- [ ] Optional: QR code on screen for phone ordering
 
 #### Navigation by Role
 | Role | Nav Items |
@@ -276,6 +303,8 @@ CREATE TABLE drink_requests (
 | Guest view | Menu + available drinks + request system |
 | Drink requests | Prompt guest for their name when requesting |
 | Stock deduction | Always automatic when marking drink "Done" |
+| Stock refill | Ask each time: "Replace" or "Add to existing" |
+| Empty bottles | Stay visible with "Empty" badge until removed/restocked |
 | Queue notifications | Badge count on nav item only (no sounds/popups) |
 | Queue control | Toggle: "Taking Orders" / "Bar Closed" |
 | Import policy | Allow all imports, hide unmakeable from guests |
