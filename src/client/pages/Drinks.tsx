@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 
 interface Ingredient {
@@ -40,6 +41,7 @@ export function Drinks() {
   const [filter, setFilter] = useState("All");
   const [makingDrink, setMakingDrink] = useState<number | null>(null);
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -62,6 +64,37 @@ export function Drinks() {
       .catch(() => showToast("Failed to load", "error"))
       .finally(() => setLoading(false));
   }, []);
+
+  // Check if we can make a drink (all required ingredients in stock with enough quantity)
+  const canMakeDrink = (drink: DrinkItem): boolean => {
+    const requiredIngredients = drink.ingredients.filter((ing) => !ing.optional);
+    if (requiredIngredients.length === 0) return true;
+
+    return requiredIngredients.every((ing) => {
+      if (!ing.stock_id) return false;
+      const stockItem = stock.find((s) => s.id === ing.stock_id);
+      if (!stockItem) return false;
+      // Check if we have enough - if amount_ml specified, check quantity, otherwise just check if > 0
+      if (ing.amount_ml && ing.amount_ml > 0) {
+        return stockItem.current_ml >= ing.amount_ml;
+      }
+      return stockItem.current_ml > 0;
+    });
+  };
+
+  // Count missing ingredients for a drink
+  const getMissingCount = (drink: DrinkItem): number => {
+    return drink.ingredients.filter((ing) => {
+      if (ing.optional) return false;
+      if (!ing.stock_id) return true;
+      const stockItem = stock.find((s) => s.id === ing.stock_id);
+      if (!stockItem) return true;
+      if (ing.amount_ml && ing.amount_ml > 0) {
+        return stockItem.current_ml < ing.amount_ml;
+      }
+      return stockItem.current_ml <= 0;
+    }).length;
+  };
 
   const handleAdd = () => {
     setEditingDrink(null);
@@ -224,9 +257,14 @@ export function Drinks() {
     <div className="page">
       <div className="header">
         <h1>Drinks</h1>
-        <button className="btn btn-primary" onClick={handleAdd}>
-          + Add
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button className="btn btn-secondary" onClick={() => navigate("/browse")}>
+            🔍 Find
+          </button>
+          <button className="btn btn-primary" onClick={handleAdd}>
+            + Add
+          </button>
+        </div>
       </div>
 
       <div className="tabs">
@@ -270,34 +308,47 @@ export function Drinks() {
                 {drink.times_made > 0 && (
                   <div className="badge badge-success">Made {drink.times_made}x</div>
                 )}
+                {!canMakeDrink(drink) && (
+                  <div className="badge badge-danger">Missing {getMissingCount(drink)}</div>
+                )}
               </div>
 
               {drink.ingredients.length > 0 && (
                 <div style={{ marginTop: "0.75rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-                  {drink.ingredients.map((ing, i) => (
-                    <div key={i}>
-                      {ing.amount_text || (ing.amount_ml ? `${ing.amount_ml}ml` : "")} {ing.ingredient_name}
-                    </div>
-                  ))}
+                  {drink.ingredients.map((ing, i) => {
+                    const stockItem = ing.stock_id ? stock.find((s) => s.id === ing.stock_id) : null;
+                    const hasEnough = stockItem && (
+                      (ing.amount_ml && ing.amount_ml > 0) ? stockItem.current_ml >= ing.amount_ml : stockItem.current_ml > 0
+                    );
+                    const isMissing = !ing.optional && !hasEnough;
+                    return (
+                      <div key={i} style={{ color: isMissing ? "var(--danger)" : undefined }}>
+                        {ing.amount_text || (ing.amount_ml ? `${ing.amount_ml}ml` : "")} {ing.ingredient_name}
+                        {isMissing && " ✗"}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              <button
-                className="btn btn-success made-it-btn"
-                style={{ marginTop: "1rem" }}
-                onClick={() => handleMakeIt(drink)}
-                disabled={makingDrink === drink.id}
-              >
-                {makingDrink === drink.id ? "Making..." : "🍸 Made It!"}
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                style={{ marginTop: "0.5rem", width: "100%", fontSize: "0.875rem", padding: "0.75rem" }}
-                onClick={() => handleAddToShopping(drink)}
-              >
-                🛒 Add Missing to Shop
-              </button>
+              {canMakeDrink(drink) ? (
+                <button
+                  className="btn btn-success made-it-btn"
+                  style={{ marginTop: "1rem" }}
+                  onClick={() => handleMakeIt(drink)}
+                  disabled={makingDrink === drink.id}
+                >
+                  {makingDrink === drink.id ? "Making..." : "🍸 Made It!"}
+                </button>
+              ) : (
+                <button
+                  className="btn btn-secondary"
+                  style={{ marginTop: "1rem", width: "100%", fontSize: "0.875rem", padding: "0.75rem" }}
+                  onClick={() => handleAddToShopping(drink)}
+                >
+                  🛒 Add Missing to Shop
+                </button>
+              )}
 
               <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
                 <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => handleEdit(drink)}>

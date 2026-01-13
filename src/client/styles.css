@@ -481,7 +481,7 @@ body {
 .stock-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.625rem;
 }
 
 .stock-category-group {
@@ -502,7 +502,7 @@ body {
 .stock-row {
   background: var(--bg-card);
   border-radius: 0.5rem;
-  padding: 0.625rem 0.75rem;
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;

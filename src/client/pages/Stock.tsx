@@ -24,6 +24,7 @@ export function Stock() {
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
   const [filter, setFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"name" | "empty" | "full" | "size-big" | "size-small">("name");
   const [quickEditId, setQuickEditId] = useState<number | null>(null);
   const [quickEditValue, setQuickEditValue] = useState("");
   const [ingredientSuggestions, setIngredientSuggestions] = useState<string[]>([]);
@@ -182,6 +183,19 @@ export function Stock() {
     }
   };
 
+  const handleAddToShopping = async (item: StockItem) => {
+    try {
+      await fetch("/api/shopping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ingredient_name: item.name, stock_id: item.id }),
+      });
+      showToast(`${item.name} added to shopping list`);
+    } catch (err) {
+      showToast("Failed to add to shopping list", "error");
+    }
+  };
+
   // Quick edit - tap percentage to enter a value like "50%" or "350ml"
   const handleQuickEdit = (item: StockItem) => {
     setQuickEditId(item.id);
@@ -225,17 +239,36 @@ export function Stock() {
   };
 
   const searchLower = searchQuery.toLowerCase();
-  const filteredStock = stock.filter((s) => {
+
+  // Sort function
+  const sortStock = (items: StockItem[]) => {
+    return [...items].sort((a, b) => {
+      switch (sortBy) {
+        case "empty":
+          return (a.current_ml / a.total_ml) - (b.current_ml / b.total_ml);
+        case "full":
+          return (b.current_ml / b.total_ml) - (a.current_ml / a.total_ml);
+        case "size-big":
+          return b.total_ml - a.total_ml;
+        case "size-small":
+          return a.total_ml - b.total_ml;
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    });
+  };
+
+  const filteredStock = sortStock(stock.filter((s) => {
     const matchesCategory = filter === "All" || s.category === filter;
     const matchesSearch = !searchQuery || s.name.toLowerCase().includes(searchLower);
     return matchesCategory && matchesSearch;
-  });
+  }));
   const categories = ["All", ...CATEGORIES];
 
   // Group stock by category for "All" view
   const groupedStock = filter === "All"
     ? CATEGORIES.reduce((acc, cat) => {
-        const items = filteredStock.filter((s) => s.category === cat);
+        const items = sortStock(filteredStock.filter((s) => s.category === cat));
         if (items.length > 0) acc[cat] = items;
         return acc;
       }, {} as Record<string, StockItem[]>)
@@ -285,6 +318,7 @@ export function Stock() {
       <div className="stock-row-controls">
         <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>−</button>
         <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>+</button>
+        <button className="btn btn-secondary btn-xs" onClick={() => handleAddToShopping(item)}>🛒</button>
         <button className="btn btn-secondary btn-xs" onClick={() => handleRefill(item)}>Refill</button>
         <button className="btn btn-secondary btn-xs" onClick={() => handleEdit(item)}>Edit</button>
         <button className="btn btn-danger btn-xs" onClick={() => handleDelete(item.id)}>✕</button>
@@ -324,15 +358,27 @@ export function Stock() {
         ))}
       </div>
 
-      <div style={{ marginBottom: "1rem" }}>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
         <input
           className="input"
           type="text"
           placeholder="Search stock..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          style={{ width: "100%" }}
+          style={{ flex: 1 }}
         />
+        <select
+          className="select"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          style={{ width: "auto", padding: "0.5rem 2rem 0.5rem 0.75rem" }}
+        >
+          <option value="name">A-Z</option>
+          <option value="empty">Empty first</option>
+          <option value="full">Full first</option>
+          <option value="size-big">Biggest</option>
+          <option value="size-small">Smallest</option>
+        </select>
       </div>
 
       {filteredStock.length === 0 ? (
