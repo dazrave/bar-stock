@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bottle } from "../components/Bottle";
 import { useToast } from "../context/ToastContext";
 import { parseVolume, formatVolume } from "../utils/volume";
@@ -23,6 +24,8 @@ export function Stock() {
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<StockItem | null>(null);
   const [filter, setFilter] = useState("All");
+  const [shoppingList, setShoppingList] = useState<{ stock_id: number | null; ingredient_name: string }[]>([]);
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "empty" | "full" | "size-big" | "size-small">("name");
   const [quickEditId, setQuickEditId] = useState<number | null>(null);
@@ -46,6 +49,11 @@ export function Stock() {
       .then((r) => r.json())
       .then(setIngredientSuggestions)
       .catch(() => {}); // Silently fail - autocomplete is optional
+    // Fetch shopping list to show indicators
+    fetch("/api/shopping")
+      .then((r) => r.json())
+      .then(setShoppingList)
+      .catch(() => {});
   }, []);
 
   const fetchStock = async () => {
@@ -190,10 +198,16 @@ export function Stock() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ingredient_name: item.name, stock_id: item.id }),
       });
+      setShoppingList((prev) => [...prev, { stock_id: item.id, ingredient_name: item.name }]);
       showToast(`${item.name} added to shopping list`);
     } catch (err) {
       showToast("Failed to add to shopping list", "error");
     }
+  };
+
+  // Check if item is in shopping list
+  const isInShoppingList = (item: StockItem) => {
+    return shoppingList.some((s) => s.stock_id === item.id || s.ingredient_name.toLowerCase() === item.name.toLowerCase());
   };
 
   // Quick edit - tap percentage to enter a value like "50%" or "350ml"
@@ -281,12 +295,17 @@ export function Stock() {
   }, {} as Record<string, number>);
 
   // Render a compact stock item
-  const renderStockItem = (item: StockItem) => (
+  const renderStockItem = (item: StockItem) => {
+    const inShoppingList = isInShoppingList(item);
+    return (
     <div key={item.id} className="stock-row">
       <div className="stock-row-main">
         <Bottle currentMl={item.current_ml} totalMl={item.total_ml} size="xs" />
         <div className="stock-row-info">
-          <span className="stock-row-name">{item.name}</span>
+          <span className="stock-row-name">
+            {item.name}
+            {inShoppingList && <span style={{ marginLeft: "0.5rem", color: "var(--warning)" }}>🛒</span>}
+          </span>
           <span className="stock-row-volume">
             {item.unit_type === "count"
               ? `${item.current_ml}/${item.total_ml}`
@@ -318,13 +337,21 @@ export function Stock() {
       <div className="stock-row-controls">
         <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>−</button>
         <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>+</button>
-        <button className="btn btn-secondary btn-xs" onClick={() => handleAddToShopping(item)}>🛒</button>
+        <button
+          className={`btn btn-xs ${inShoppingList ? "btn-success" : "btn-secondary"}`}
+          onClick={() => !inShoppingList && handleAddToShopping(item)}
+          disabled={inShoppingList}
+          title={inShoppingList ? "Already in shopping list" : "Add to shopping list"}
+        >
+          🛒
+        </button>
         <button className="btn btn-secondary btn-xs" onClick={() => handleRefill(item)}>Refill</button>
         <button className="btn btn-secondary btn-xs" onClick={() => handleEdit(item)}>Edit</button>
         <button className="btn btn-danger btn-xs" onClick={() => handleDelete(item.id)}>✕</button>
       </div>
     </div>
   );
+  };
 
   if (loading) {
     return (
@@ -338,9 +365,14 @@ export function Stock() {
     <div className="page">
       <div className="header">
         <h1>Stock</h1>
-        <button className="btn btn-primary" onClick={handleAdd}>
-          + Add
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button className="btn btn-secondary" onClick={() => navigate("/shopping")}>
+            🛒 Shop {shoppingList.length > 0 && `(${shoppingList.length})`}
+          </button>
+          <button className="btn btn-primary" onClick={handleAdd}>
+            + Add
+          </button>
+        </div>
       </div>
 
       <div className="tabs">

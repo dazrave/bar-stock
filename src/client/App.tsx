@@ -20,10 +20,6 @@ export function App({ children }: AppProps) {
               <span className="nav-icon">🍾</span>
               <span>Stock</span>
             </NavLink>
-            <NavLink to="/shopping" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
-              <span className="nav-icon">🛒</span>
-              <span>Shop</span>
-            </NavLink>
             <NavLink to="/drinks" className={({ isActive }) => `nav-item ${isActive ? "active" : ""}`}>
               <span className="nav-icon">🍹</span>
               <span>Drinks</span>
