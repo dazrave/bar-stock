@@ -518,16 +518,43 @@ export function Drinks() {
                         <span
                           style={{
                             flex: 1,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
                             color: isMissing ? "var(--text-secondary)" : "var(--text)",
                             opacity: isMissing ? 0.6 : 1,
                           }}
                         >
-                          {ing.ingredient_name}
-                          {ing.optional === 1 && (
-                            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginLeft: "0.5rem" }}>
-                              (optional)
-                            </span>
-                          )}
+                          <span>
+                            {ing.ingredient_name}
+                            {ing.optional === 1 && (
+                              <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginLeft: "0.5rem" }}>
+                                (optional)
+                              </span>
+                            )}
+                          </span>
+                          {/* Search brands */}
+                          <a
+                            href={`https://www.google.com/search?q=${encodeURIComponent(ing.ingredient_name + " drink/brands")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ opacity: 0.5, fontSize: "0.75rem" }}
+                            title="Search brands"
+                          >
+                            🔍
+                          </a>
+                          {/* Search substitutes */}
+                          <a
+                            href={`https://www.google.com/search?q=${encodeURIComponent(ing.ingredient_name + " substitute cocktail")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ opacity: 0.5, fontSize: "0.75rem" }}
+                            title="Search substitutes"
+                          >
+                            🔄
+                          </a>
                         </span>
                       </div>
                     );
@@ -542,7 +569,14 @@ export function Drinks() {
                 <h3 style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                   Instructions
                 </h3>
-                <p style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{selectedDrink.instructions}</p>
+                <div style={{
+                  background: "rgba(255, 255, 255, 0.05)",
+                  borderLeft: "3px solid var(--primary)",
+                  borderRadius: "0.5rem",
+                  padding: "1rem",
+                }}>
+                  <p style={{ lineHeight: 1.6, whiteSpace: "pre-wrap", margin: 0 }}>{selectedDrink.instructions}</p>
+                </div>
               </div>
             )}
 

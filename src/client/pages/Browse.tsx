@@ -41,6 +41,11 @@ interface ShoppingItem {
   ingredient_name: string;
 }
 
+interface UserDrink {
+  id: number;
+  name: string;
+}
+
 interface Swap {
   id: number;
   source: string;
@@ -56,6 +61,7 @@ export function Browse() {
   const [stock, setStock] = useState<StockItem[]>([]);
   const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
   const [swaps, setSwaps] = useState<Swap[]>([]);
+  const [userDrinks, setUserDrinks] = useState<UserDrink[]>([]);
   const [cocktaildbCount, setCocktaildbCount] = useState(0);
   const [ibaCount, setIbaCount] = useState(0);
   const [search, setSearch] = useState("");
@@ -81,6 +87,11 @@ export function Browse() {
     fetch("/api/shopping")
       .then((r) => r.json())
       .then((data) => setShoppingList(Array.isArray(data) ? data : []))
+      .catch(() => {});
+    // Fetch user drinks to check if already imported
+    fetch("/api/drinks")
+      .then((r) => r.json())
+      .then((data) => setUserDrinks(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
@@ -224,6 +235,9 @@ export function Browse() {
       const endpoint = source === "iba" ? `/api/iba/import/${drink.id}` : `/api/cocktaildb/import/${drink.id}`;
       const res = await fetch(endpoint, { method: "POST" });
       if (res.ok) {
+        const imported = await res.json();
+        // Add to userDrinks so checkmark appears immediately
+        setUserDrinks((prev) => [...prev, { id: imported.id, name: imported.name }]);
         showToast(`${drink.name} added to your drinks!`);
         setSelectedDrink(null);
       } else {
@@ -252,8 +266,8 @@ export function Browse() {
     // Remove "freshly squeezed" or "fresh" prefix
     normalized = normalized.replace(/^freshly squeezed /i, "");
     normalized = normalized.replace(/^fresh /i, "");
-    // Remove "thin slices", "slices", "slice" etc.
-    normalized = normalized.replace(/^(?:thin\s+)?slices?\s+(?:of\s+)?/i, "");
+    // Remove "thin slices", "slices", "slice" etc. (with optional leading number)
+    normalized = normalized.replace(/^(?:\d+\s*)?(?:thin\s+)?slices?\s+(?:of\s+)?/i, "");
     // Remove measure words that might have leaked into the name (few dashes, dash, drop, splash, shot, jigger)
     normalized = normalized.replace(/^(?:few\s+)?(?:dash(?:es)?|drop(?:s)?|splash(?:es)?|shot(?:s)?|jigger(?:s)?)\s+(?:of\s+)?/i, "");
     // Remove "top with", "top up with", "top up"
@@ -307,6 +321,12 @@ export function Browse() {
         item.ingredient_name.toLowerCase().includes(lower) ||
         lower.includes(item.ingredient_name.toLowerCase())
     );
+  };
+
+  // Check if drink is already in user's drinks list (case-insensitive)
+  const isAlreadyImported = (drinkName: string): boolean => {
+    const lower = drinkName.toLowerCase();
+    return userDrinks.some((d) => d.name.toLowerCase() === lower);
   };
 
   // Get swap for a specific ingredient in a drink
@@ -597,6 +617,7 @@ export function Browse() {
           {filteredDrinks.map((drink) => {
             const canMake = canMakeDrink(drink);
             const isHidden = drink.hidden === 1;
+            const isImported = isAlreadyImported(drink.name);
             const { have, total, someMissingOnList, allMissingOnList, missingNames } = getIngredientCount(drink);
             // Not ghosted if can make OR if all missing items are on shopping list
             const isGhosted = isOwner && (!canMake && !allMissingOnList || isHidden);
@@ -612,6 +633,25 @@ export function Browse() {
                   position: "relative",
                 }}
               >
+                {/* Already imported indicator */}
+                {isImported && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "0.5rem",
+                      left: "0.5rem",
+                      fontSize: "0.875rem",
+                      background: "rgba(34, 197, 94, 0.2)",
+                      color: "var(--success)",
+                      padding: "0.125rem 0.375rem",
+                      borderRadius: "0.25rem",
+                      zIndex: 1,
+                    }}
+                    title="Already in your drinks"
+                  >
+                    ✓
+                  </div>
+                )}
                 {isOwner && isHidden && (
                   <div
                     style={{
@@ -950,14 +990,30 @@ export function Browse() {
                   {selectedDrink.hidden ? "Show" : "Hide"}
                 </button>
               )}
-              <button
-                className="btn btn-primary"
-                style={{ flex: "1 1 100%" }}
-                onClick={() => handleImport(selectedDrink)}
-                disabled={importing === selectedDrink.id}
-              >
-                {importing === selectedDrink.id ? "Adding..." : "+ Add to Drinks"}
-              </button>
+              {isAlreadyImported(selectedDrink.name) ? (
+                <div
+                  style={{
+                    flex: "1 1 100%",
+                    background: "rgba(34, 197, 94, 0.15)",
+                    color: "var(--success)",
+                    padding: "0.75rem",
+                    borderRadius: "0.75rem",
+                    textAlign: "center",
+                    fontWeight: 500,
+                  }}
+                >
+                  ✓ Already in Drinks
+                </div>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: "1 1 100%" }}
+                  onClick={() => handleImport(selectedDrink)}
+                  disabled={importing === selectedDrink.id}
+                >
+                  {importing === selectedDrink.id ? "Adding..." : "+ Add to Drinks"}
+                </button>
+              )}
             </div>
           </div>
         </div>
