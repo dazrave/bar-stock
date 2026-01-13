@@ -369,7 +369,7 @@ export function Stock() {
   return (
     <div className="page">
       <div className="header">
-        <h1>Stock</h1>
+        <h1>{isOwner ? "Stock" : "Shelf"}</h1>
         {isOwner && (
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button className="btn btn-secondary" onClick={() => navigate("/shopping")}>

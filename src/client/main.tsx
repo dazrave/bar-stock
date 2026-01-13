@@ -45,7 +45,7 @@ function AppRoutes() {
       <Route
         path="/stock"
         element={
-          <ProtectedRoute ownerOnly>
+          <ProtectedRoute>
             <App>
               <Stock />
             </App>

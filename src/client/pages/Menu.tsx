@@ -182,23 +182,6 @@ export function Menu() {
         </div>
       </div>
 
-      {!barOpen && (
-        <div
-          style={{
-            background: "rgba(239, 68, 68, 0.2)",
-            border: "1px solid var(--danger)",
-            borderRadius: "0.75rem",
-            padding: "1rem",
-            marginBottom: "1rem",
-            textAlign: "center",
-          }}
-        >
-          <strong>Bar is currently closed</strong>
-          <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-            Drink requests are not being accepted
-          </p>
-        </div>
-      )}
 
       {/* Filter tabs */}
       <div className="tabs" style={{ marginBottom: "1rem" }}>
@@ -398,7 +381,7 @@ export function Menu() {
               >
                 Close
               </button>
-              {selectedDrink.canMake && barOpen && (
+              {selectedDrink.canMake && barOpen ? (
                 <button
                   className="btn btn-primary"
                   style={{ flex: "1 1 45%" }}
@@ -406,7 +389,21 @@ export function Menu() {
                 >
                   Request
                 </button>
-              )}
+              ) : !barOpen ? (
+                <div
+                  style={{
+                    flex: "1 1 45%",
+                    background: "rgba(239, 68, 68, 0.2)",
+                    border: "1px solid var(--danger)",
+                    borderRadius: "0.75rem",
+                    padding: "0.75rem",
+                    textAlign: "center",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  Bar is closed
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
