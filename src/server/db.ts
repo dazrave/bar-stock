@@ -62,6 +62,12 @@ db.exec(`
     scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS cocktaildb_ingredients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS shopping_list (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ingredient_name TEXT NOT NULL,
@@ -89,6 +95,27 @@ if (existingPasscodes.count === 0) {
   db.run("INSERT INTO passcodes (type, code) VALUES ('owner', '1234')");
   db.run("INSERT INTO passcodes (type, code) VALUES ('guest', '0000')");
   console.log("Default passcodes created: owner=1234, guest=0000");
+}
+
+// Migrate existing drink ingredients to cache (one-time)
+const ingredientCount = db.query("SELECT COUNT(*) as count FROM cocktaildb_ingredients").get() as { count: number };
+const drinkCount = db.query("SELECT COUNT(*) as count FROM cocktaildb_drinks").get() as { count: number };
+if (ingredientCount.count === 0 && drinkCount.count > 0) {
+  console.log("Migrating ingredients from cached drinks...");
+  const drinks = db.query("SELECT ingredients_json FROM cocktaildb_drinks").all() as { ingredients_json: string }[];
+  const seen = new Set<string>();
+  for (const drink of drinks) {
+    try {
+      const ingredients = JSON.parse(drink.ingredients_json || "[]") as { name: string }[];
+      for (const ing of ingredients) {
+        if (ing.name && !seen.has(ing.name)) {
+          seen.add(ing.name);
+          db.run("INSERT OR IGNORE INTO cocktaildb_ingredients (name) VALUES (?)", [ing.name]);
+        }
+      }
+    } catch {}
+  }
+  console.log(`Migrated ${seen.size} unique ingredients`);
 }
 
 // Types
@@ -242,11 +269,17 @@ export const cocktailDBQueries = {
   ),
   getCount: db.query<{ count: number }, []>("SELECT COUNT(*) as count FROM cocktaildb_drinks"),
   getAllExternalIds: db.query<{ external_id: string }, []>("SELECT external_id FROM cocktaildb_drinks"),
-  getUniqueIngredients: db.query<{ name: string }, []>(`
-    SELECT DISTINCT json_each.value as name
-    FROM cocktaildb_drinks, json_each(cocktaildb_drinks.ingredients_json, '$[*].name')
-    ORDER BY name
-  `),
+
+  // Ingredient caching
+  getAllIngredients: db.query<{ name: string }, []>(
+    "SELECT name FROM cocktaildb_ingredients ORDER BY name"
+  ),
+  insertIngredient: db.query<null, [string]>(
+    "INSERT OR IGNORE INTO cocktaildb_ingredients (name) VALUES (?)"
+  ),
+  getIngredientCount: db.query<{ count: number }, []>(
+    "SELECT COUNT(*) as count FROM cocktaildb_ingredients"
+  ),
 };
 
 // Shopping list queries

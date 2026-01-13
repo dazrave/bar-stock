@@ -332,6 +332,14 @@ app.post("/api/cocktaildb/sync", requireAuth(), async (c) => {
             d.strDrinkThumb,
             JSON.stringify(ingredients)
           );
+
+          // Cache ingredients
+          for (const ing of ingredients) {
+            if (ing.name) {
+              cocktailDBQueries.insertIngredient.run(ing.name);
+            }
+          }
+
           synced++;
         }
       }
@@ -343,9 +351,9 @@ app.post("/api/cocktaildb/sync", requireAuth(), async (c) => {
   return c.json({ synced, skipped, errors: errors.length > 0 ? errors : undefined });
 });
 
-// Get unique ingredients from CocktailDB for autocomplete
+// Get cached ingredients from CocktailDB for autocomplete
 app.get("/api/cocktaildb/ingredients", requireAuth(true), (c) => {
-  const ingredients = cocktailDBQueries.getUniqueIngredients.all();
+  const ingredients = cocktailDBQueries.getAllIngredients.all();
   return c.json(ingredients.map((i) => i.name));
 });
 

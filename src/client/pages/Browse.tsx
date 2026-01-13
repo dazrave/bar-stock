@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useToast } from "../context/ToastContext";
-import { formatMeasureWithMl } from "../utils/volume";
+import { formatMeasureWithMl, formatVolume } from "../utils/volume";
 
 interface CocktailDBDrink {
   id: number;
@@ -13,8 +13,16 @@ interface CocktailDBDrink {
   ingredients_json: string;
 }
 
+interface StockItem {
+  id: number;
+  name: string;
+  current_ml: number;
+  total_ml: number;
+}
+
 export function Browse() {
   const [drinks, setDrinks] = useState<CocktailDBDrink[]>([]);
+  const [stock, setStock] = useState<StockItem[]>([]);
   const [count, setCount] = useState(0);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,6 +33,11 @@ export function Browse() {
 
   useEffect(() => {
     fetchCount();
+    // Fetch stock for ingredient matching
+    fetch("/api/stock")
+      .then((r) => r.json())
+      .then(setStock)
+      .catch(() => {});
   }, []);
 
   const fetchCount = async () => {
@@ -113,6 +126,37 @@ export function Browse() {
       return JSON.parse(json) || [];
     } catch {
       return [];
+    }
+  };
+
+  // Find matching stock item by name (case insensitive, partial match)
+  const findStockMatch = (ingredientName: string): StockItem | undefined => {
+    const lower = ingredientName.toLowerCase();
+    return stock.find(
+      (s) =>
+        s.name.toLowerCase() === lower ||
+        s.name.toLowerCase().includes(lower) ||
+        lower.includes(s.name.toLowerCase())
+    );
+  };
+
+  const handleAddToShoppingList = async (ingredientName: string) => {
+    try {
+      const res = await fetch("/api/shopping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ingredient_name: ingredientName }),
+      });
+
+      if (res.status === 409) {
+        showToast(`${ingredientName} already in shopping list`);
+      } else if (res.ok) {
+        showToast(`Added ${ingredientName} to shopping list`);
+      } else {
+        showToast("Failed to add", "error");
+      }
+    } catch (err) {
+      showToast("Failed to add", "error");
     }
   };
 
@@ -212,20 +256,74 @@ export function Browse() {
               <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
                 INGREDIENTS
               </h3>
-              {parseIngredients(selectedDrink.ingredients_json).map((ing, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "0.5rem 0",
-                    borderBottom: "1px solid rgba(255,255,255,0.1)",
-                  }}
-                >
-                  <span>{ing.name}</span>
-                  <span style={{ color: "var(--text-secondary)" }}>{formatMeasureWithMl(ing.measure)}</span>
-                </div>
-              ))}
+              {parseIngredients(selectedDrink.ingredients_json).map((ing, i) => {
+                const stockMatch = findStockMatch(ing.name);
+                const hasStock = stockMatch && stockMatch.current_ml > 0;
+                const percentage = stockMatch
+                  ? Math.round((stockMatch.current_ml / stockMatch.total_ml) * 100)
+                  : 0;
+
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      padding: "0.75rem 0",
+                      borderBottom: "1px solid rgba(255,255,255,0.1)",
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span>{ing.name}</span>
+                        {stockMatch && (
+                          <span
+                            style={{
+                              fontSize: "0.75rem",
+                              padding: "0.125rem 0.5rem",
+                              borderRadius: "9999px",
+                              background: hasStock
+                                ? percentage > 25
+                                  ? "rgba(34, 197, 94, 0.2)"
+                                  : "rgba(234, 179, 8, 0.2)"
+                                : "rgba(239, 68, 68, 0.2)",
+                              color: hasStock
+                                ? percentage > 25
+                                  ? "var(--success)"
+                                  : "var(--warning)"
+                                : "var(--danger)",
+                            }}
+                          >
+                            {hasStock ? `${formatVolume(stockMatch.current_ml)} (${percentage}%)` : "Empty"}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                        {formatMeasureWithMl(ing.measure)}
+                      </div>
+                    </div>
+                    {!stockMatch && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: "0.5rem 0.75rem", fontSize: "0.75rem" }}
+                        onClick={() => handleAddToShoppingList(ing.name)}
+                      >
+                        + Shop
+                      </button>
+                    )}
+                    {stockMatch && !hasStock && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: "0.5rem 0.75rem", fontSize: "0.75rem" }}
+                        onClick={() => handleAddToShoppingList(ing.name)}
+                      >
+                        + Shop
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {selectedDrink.instructions && (
