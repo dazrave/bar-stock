@@ -2,6 +2,36 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastContext";
 
+// Convert oz measurements to ml for display
+const formatAmount = (amountText: string | null, amountMl: number | null): string => {
+  if (amountMl) return `${amountMl}ml`;
+  if (!amountText) return "";
+
+  // Convert common oz patterns to ml (1 oz ≈ 30ml)
+  const ozMatch = amountText.match(/^([\d.\/\s]+)\s*oz$/i);
+  if (ozMatch) {
+    const ozStr = ozMatch[1].trim();
+    let oz = 0;
+
+    // Handle fractions like "1 1/2" or "1/2"
+    const parts = ozStr.split(/\s+/);
+    for (const part of parts) {
+      if (part.includes("/")) {
+        const [num, denom] = part.split("/").map(Number);
+        oz += num / denom;
+      } else {
+        oz += parseFloat(part) || 0;
+      }
+    }
+
+    if (oz > 0) {
+      return `${Math.round(oz * 30)}ml`;
+    }
+  }
+
+  return amountText;
+};
+
 interface Ingredient {
   id?: number;
   drink_id?: number;
@@ -323,7 +353,7 @@ export function Drinks() {
                     const isMissing = !ing.optional && !hasEnough;
                     return (
                       <div key={i} style={{ color: isMissing ? "var(--danger)" : undefined }}>
-                        {ing.amount_text || (ing.amount_ml ? `${ing.amount_ml}ml` : "")} {ing.ingredient_name}
+                        {formatAmount(ing.amount_text, ing.amount_ml)} {ing.ingredient_name}
                         {isMissing && " ✗"}
                       </div>
                     );
