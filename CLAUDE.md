@@ -85,22 +85,25 @@ Default passcodes (change in Settings):
 4. **Database change:** Update schema in `db.ts`
 
 ## Deployment
-Runs on Proxmox LXC container with systemd service.
+Runs on Proxmox LXC container 201 (barstock) on Prox2 with systemd service.
 
 **Server Access:**
-- Host: `192.168.0.23`
+- Prox1: `192.168.0.23` (not used for barstock)
+- Prox2: `192.168.0.98` (hosts barstock container 201)
 - User: `root`
 - Password: `EqualPurpleMouse`
 
 Service file: `/etc/systemd/system/barstock.service`
 
 ```bash
-# SSH into server
-ssh root@192.168.0.23
+# Deploy from Prox2
+ssh root@192.168.0.98
+pct exec 201 -- bash -c "cd /root/bar-stock && git pull && systemctl restart barstock"
 
-# On the server:
-cd /opt/bar-stock
+# Or direct into container
+pct enter 201
+cd /root/bar-stock
 git pull
-systemctl restart barstock  # Restart after updates
+systemctl restart barstock
 journalctl -u barstock -f   # View logs
 ```
