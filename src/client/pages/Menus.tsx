@@ -212,6 +212,52 @@ export function Menus() {
     }
   };
 
+  const handleMoveMenu = async (menu: Menu, direction: "up" | "down") => {
+    const currentIndex = menus.findIndex((m) => m.id === menu.id);
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= menus.length) return;
+
+    const targetMenu = menus[targetIndex];
+
+    // Swap sort orders
+    const currentOrder = menu.sort_order || currentIndex;
+    const targetOrder = targetMenu.sort_order || targetIndex;
+
+    try {
+      await Promise.all([
+        fetch(`/api/menus/${menu.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: menu.name,
+            description: menu.description,
+            active: menu.active,
+            sort_order: targetOrder,
+          }),
+        }),
+        fetch(`/api/menus/${targetMenu.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: targetMenu.name,
+            description: targetMenu.description,
+            active: targetMenu.active,
+            sort_order: currentOrder,
+          }),
+        }),
+      ]);
+
+      // Update local state
+      const newMenus = [...menus];
+      newMenus[currentIndex] = { ...targetMenu, sort_order: currentOrder };
+      newMenus[targetIndex] = { ...menu, sort_order: targetOrder };
+      setMenus(newMenus);
+    } catch (err) {
+      showToast("Failed to reorder menus", "error");
+    }
+  };
+
   // Get drinks not already in selected menu
   const getAvailableDrinks = () => {
     if (!selectedMenu) return drinks;
@@ -280,12 +326,34 @@ export function Menus() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          {menus.map((menu) => (
+          {menus.map((menu, index) => (
             <div key={menu.id} className="card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <h2 style={{ fontSize: "1.125rem", fontWeight: 700, margin: 0 }}>{menu.name}</h2>
+                <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                  {/* Reorder buttons */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", opacity: index === 0 ? 0.3 : 1 }}
+                      onClick={() => handleMoveMenu(menu, "up")}
+                      disabled={index === 0}
+                      title="Move up"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", opacity: index === menus.length - 1 ? 0.3 : 1 }}
+                      onClick={() => handleMoveMenu(menu, "down")}
+                      disabled={index === menus.length - 1}
+                      title="Move down"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <h2 style={{ fontSize: "1.125rem", fontWeight: 700, margin: 0 }}>{menu.name}</h2>
                     {menu.active === 0 && (
                       <span className="badge badge-danger">Hidden</span>
                     )}
@@ -299,6 +367,7 @@ export function Menus() {
                     {menu.drinks.length} drink{menu.drinks.length !== 1 ? "s" : ""} •{" "}
                     {menu.drinks.filter((d) => d.canMake).length} available
                   </p>
+                  </div>
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <button
