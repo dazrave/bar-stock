@@ -42,8 +42,11 @@ export function Menu() {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [barOpen, setBarOpen] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
-  const [filterType, setFilterType] = useState<"all" | "menu" | "category">("all");
+  const [filterType, setFilterType] = useState<"all" | "menu" | "category" | "spirit">("all");
   const [filterValue, setFilterValue] = useState<string>("all");
+
+  // Base spirits for filtering
+  const BASE_SPIRITS = ["Vodka", "Rum", "Gin", "Whiskey", "Tequila"];
   const [showUnavailable, setShowUnavailable] = useState(false);
   const { logout, session } = useAuth();
   const { showToast } = useToast();
@@ -171,7 +174,13 @@ export function Menu() {
           const menu = menus.find(m => m.name === filterValue);
           return menu?.drinks.some(md => md.id === d.id);
         })
-      : allVisibleDrinks.filter(d => d.category === filterValue);
+      : filterType === "spirit"
+        ? allVisibleDrinks.filter(d =>
+            d.ingredients?.some(ing =>
+              ing.name.toLowerCase().includes(filterValue.toLowerCase())
+            )
+          )
+        : allVisibleDrinks.filter(d => d.category === filterValue);
 
   if (loading) {
     return (
@@ -226,7 +235,7 @@ export function Menu() {
 
       {/* Category filter (secondary) */}
       {categories.length > 1 && (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
           {categories.map(cat => (
             <button
               key={cat}
@@ -244,6 +253,41 @@ export function Menu() {
               {cat}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Spirit-based filter */}
+      {BASE_SPIRITS.some(spirit =>
+        allVisibleDrinks.some(d =>
+          d.ingredients?.some(ing => ing.name.toLowerCase().includes(spirit.toLowerCase()))
+        )
+      ) && (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem", alignItems: "center" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginRight: "0.25rem" }}>Base:</span>
+          {BASE_SPIRITS.map(spirit => {
+            const count = allVisibleDrinks.filter(d =>
+              d.ingredients?.some(ing => ing.name.toLowerCase().includes(spirit.toLowerCase()))
+            ).length;
+            if (count === 0) return null;
+            return (
+              <button
+                key={spirit}
+                className={`btn btn-sm ${filterType === "spirit" && filterValue === spirit ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => {
+                  if (filterType === "spirit" && filterValue === spirit) {
+                    setFilterType("all");
+                    setFilterValue("all");
+                  } else {
+                    setFilterType("spirit");
+                    setFilterValue(spirit);
+                  }
+                }}
+                style={{ fontSize: "0.8125rem" }}
+              >
+                {spirit} <span style={{ opacity: 0.7 }}>({count})</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
