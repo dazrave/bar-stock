@@ -13,24 +13,17 @@
         var cutoff = new Date('2026-01-22T00:00:00').getTime();
         var now = Date.now();
         var minute = Math.floor(now / 60000);
-        window.__cacheBust = now < cutoff ? '?v=' + minute : '';
+        var bust = now < cutoff ? '?v=' + minute : '';
 
-        // Load CSS immediately
         var link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = './styles.css' + window.__cacheBust;
+        link.href = './styles.css' + bust;
         document.head.appendChild(link);
       })();
     </script>
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // Load JS with cache-bust
-      var script = document.createElement('script');
-      script.type = 'module';
-      script.src = './main.tsx' + (window.__cacheBust || '');
-      document.body.appendChild(script);
-    </script>
+    <script type="module" src="./main.tsx"></script>
   </body>
 </html>
