@@ -155,7 +155,19 @@ export function Menus() {
 
     try {
       await fetch(`/api/menus/${selectedMenu.id}/drinks/${drinkId}`, { method: "POST" });
-      // Refresh menus
+      // Update selectedMenu immediately so it disappears from list
+      const addedDrink = drinks.find((d) => d.id === drinkId);
+      if (addedDrink) {
+        setSelectedMenu((prev) =>
+          prev
+            ? {
+                ...prev,
+                drinks: [...prev.drinks, { ...addedDrink, menu_drink_id: 0, menu_hidden: 0, canMake: true, servingsLeft: 99 }],
+              }
+            : null
+        );
+      }
+      // Also refresh full data
       fetchData();
       showToast("Drink added to menu");
     } catch (err) {
