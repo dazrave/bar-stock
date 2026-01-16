@@ -754,3 +754,321 @@ body {
 .availability-dot.unavailable {
   background: var(--danger);
 }
+
+/* Stock row with expandable drinks */
+.stock-row-container {
+  background: var(--bg-card);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.stock-row-container.expanded {
+  border: 1px solid var(--accent);
+}
+
+.stock-row-container > .stock-row {
+  background: transparent;
+  border-radius: 0;
+}
+
+.stock-row-drinks-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.25rem;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0.375rem;
+  transition: background-color 0.15s;
+}
+
+.stock-row-drinks-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.drinks-count {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.expand-arrow {
+  font-size: 0.625rem;
+  color: var(--text-secondary);
+  transition: transform 0.2s;
+}
+
+.expand-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.stock-drinks-list {
+  padding: 0.5rem 0.75rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stock-drinks-empty {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 0.5rem 0;
+}
+
+.stock-drink-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.stock-drink-item:hover {
+  background: var(--accent);
+}
+
+.stock-drink-item .drink-name {
+  flex: 1;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.stock-drink-item .drink-category {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.stock-drink-item:hover .drink-category {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.on-menu-badge {
+  font-size: 0.625rem;
+  padding: 0.125rem 0.375rem;
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--success);
+  border-radius: 9999px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Unavailable drinks section */
+.unavailable-drinks-section {
+  margin-top: 2rem;
+  background: var(--bg-card);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.unavailable-drinks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  cursor: pointer;
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.unavailable-drinks-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.unavailable-count {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  background: var(--danger);
+  color: white;
+  border-radius: 9999px;
+  font-weight: 700;
+}
+
+.unavailable-drinks-list {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.unavailable-drink-item {
+  padding: 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: all 0.15s;
+}
+
+.unavailable-drink-item:hover {
+  opacity: 1;
+  background: var(--bg-primary);
+}
+
+.unavailable-drink-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+}
+
+.unavailable-drink-info .drink-name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.unavailable-drink-info .drink-category {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.missing-ingredients {
+  font-size: 0.75rem;
+  color: var(--danger);
+}
+
+/* Drink detail modal */
+.drink-category-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: -0.5rem 0 1rem 0;
+}
+
+.drink-description {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.ingredient-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.ingredient-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary);
+  border-radius: 0.375rem;
+}
+
+.ingredient-item.missing {
+  border-left: 3px solid var(--danger);
+}
+
+.ingredient-item.optional {
+  opacity: 0.6;
+}
+
+.ingredient-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ingredient-amount {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.optional-badge {
+  font-size: 0.625rem;
+  padding: 0.125rem 0.375rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  border-radius: 9999px;
+  text-transform: uppercase;
+}
+
+.missing-badge {
+  font-size: 0.625rem;
+  padding: 0.125rem 0.375rem;
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--danger);
+  border-radius: 9999px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.instructions-text {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* Menu unavailable toggle */
+.menu-availability-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-card);
+  border-radius: 0.5rem;
+}
+
+.menu-availability-toggle label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 2.5rem;
+  height: 1.5rem;
+  background: var(--bg-secondary);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.toggle-switch.active {
+  background: var(--accent);
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle-switch.active::after {
+  transform: translateX(1rem);
+}
+
+/* Menu drink unavailable state */
+.menu-drink-unavailable {
+  opacity: 0.5;
+  filter: grayscale(30%);
+}
+
+.menu-drink-unavailable .made-it-btn {
+  display: none;
+}

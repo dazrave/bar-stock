@@ -18,6 +18,29 @@ interface StockItem {
   aliases: string | null;
 }
 
+interface StockDrink {
+  drink_id: number;
+  drink_name: string;
+  drink_category: string;
+  on_menu: number;
+}
+
+interface UnavailableDrink {
+  id: number;
+  name: string;
+  category: string;
+  instructions: string | null;
+  description: string | null;
+  image_path: string | null;
+  missingIngredients: string[];
+  ingredients: Array<{
+    name: string;
+    amount: string | null;
+    optional: boolean;
+    stock_id: number | null;
+  }>;
+}
+
 const CATEGORIES = STOCK_CATEGORIES;
 
 export function Stock() {
@@ -37,6 +60,14 @@ export function Stock() {
   const { session } = useAuth();
   const isOwner = session?.type === "owner";
 
+  // New state for drinks by stock item
+  const [expandedStockId, setExpandedStockId] = useState<number | null>(null);
+  const [stockDrinks, setStockDrinks] = useState<Record<number, StockDrink[]>>({});
+  const [drinkCounts, setDrinkCounts] = useState<Record<number, number>>({});
+  const [unavailableDrinks, setUnavailableDrinks] = useState<UnavailableDrink[]>([]);
+  const [showUnavailable, setShowUnavailable] = useState(false);
+  const [selectedDrink, setSelectedDrink] = useState<UnavailableDrink | null>(null);
+
   // Form state - using strings to allow flexible input
   const [formData, setFormData] = useState({
     name: "",
@@ -49,6 +80,7 @@ export function Stock() {
 
   useEffect(() => {
     fetchStock();
+    fetchUnavailableDrinks();
     // Fetch ingredient suggestions for autocomplete
     fetch("/api/cocktaildb/ingredients")
       .then((r) => r.json())
@@ -60,6 +92,40 @@ export function Stock() {
       .then((data) => setShoppingList(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
+
+  const fetchUnavailableDrinks = async () => {
+    try {
+      const res = await fetch("/api/drinks/unavailable");
+      const data = await res.json();
+      setUnavailableDrinks(data);
+    } catch (err) {
+      // Silently fail
+    }
+  };
+
+  const fetchDrinksForStock = async (stockId: number) => {
+    if (stockDrinks[stockId]) {
+      // Already fetched
+      return;
+    }
+    try {
+      const res = await fetch(`/api/stock/${stockId}/drinks`);
+      const data = await res.json();
+      setStockDrinks((prev) => ({ ...prev, [stockId]: data }));
+      setDrinkCounts((prev) => ({ ...prev, [stockId]: data.length }));
+    } catch (err) {
+      // Silently fail
+    }
+  };
+
+  const toggleExpanded = async (stockId: number) => {
+    if (expandedStockId === stockId) {
+      setExpandedStockId(null);
+    } else {
+      setExpandedStockId(stockId);
+      await fetchDrinksForStock(stockId);
+    }
+  };
 
   const fetchStock = async () => {
     try {
@@ -296,66 +362,96 @@ export function Stock() {
   const renderStockItem = (item: StockItem) => {
     const inShoppingList = isInShoppingList(item);
     const percent = Math.round((item.current_ml / item.total_ml) * 100);
+    const isExpanded = expandedStockId === item.id;
+    const drinks = stockDrinks[item.id] || [];
+    const drinkCount = drinkCounts[item.id];
 
     return (
-    <div key={item.id} className={`stock-row ${!isOwner ? "stock-row-guest" : ""}`}>
-      <div className="stock-row-main">
-        <Bottle currentMl={item.current_ml} totalMl={item.total_ml} size="xs" />
-        <div className="stock-row-info">
-          <span className="stock-row-name">
-            {item.name}
-            <span className="badge" style={{ marginLeft: "0.5rem", fontSize: "0.625rem", padding: "0.125rem 0.375rem" }}>{item.category}</span>
-            {isOwner && inShoppingList && <span style={{ marginLeft: "0.5rem", color: "var(--warning)" }}>🛒</span>}
-          </span>
-          <span className="stock-row-volume">
-            {item.unit_type === "count"
-              ? `${item.current_ml}/${item.total_ml}`
-              : `${formatVolume(item.current_ml)}/${formatVolume(item.total_ml)}`}
-          </span>
-        </div>
-        {isOwner ? (
-          quickEditId === item.id ? (
-            <input
-              className="input stock-row-quick-input"
-              value={quickEditValue}
-              onChange={(e) => setQuickEditValue(e.target.value)}
-              onBlur={() => handleQuickEditSave(item)}
-              onKeyDown={(e) => e.key === "Enter" && handleQuickEditSave(item)}
-              autoFocus
-              placeholder={item.unit_type === "count" ? "5" : "50%"}
-            />
-          ) : (
-            <div
-              className="stock-row-percent"
-              onClick={() => handleQuickEdit(item)}
-              title={item.unit_type === "count" ? "Tap to edit" : "Tap to edit (50%, 350ml)"}
-            >
+    <div key={item.id} className={`stock-row-container ${isExpanded ? "expanded" : ""}`}>
+      <div className={`stock-row ${!isOwner ? "stock-row-guest" : ""}`}>
+        <div className="stock-row-main">
+          <Bottle currentMl={item.current_ml} totalMl={item.total_ml} size="xs" />
+          <div className="stock-row-info">
+            <span className="stock-row-name">
+              {item.name}
+              <span className="badge" style={{ marginLeft: "0.5rem", fontSize: "0.625rem", padding: "0.125rem 0.375rem" }}>{item.category}</span>
+              {isOwner && inShoppingList && <span style={{ marginLeft: "0.5rem", color: "var(--warning)" }}>🛒</span>}
+            </span>
+            <span className="stock-row-volume">
               {item.unit_type === "count"
-                ? item.current_ml
-                : `${percent}%`}
+                ? `${item.current_ml}/${item.total_ml}`
+                : `${formatVolume(item.current_ml)}/${formatVolume(item.total_ml)}`}
+            </span>
+          </div>
+          {isOwner ? (
+            quickEditId === item.id ? (
+              <input
+                className="input stock-row-quick-input"
+                value={quickEditValue}
+                onChange={(e) => setQuickEditValue(e.target.value)}
+                onBlur={() => handleQuickEditSave(item)}
+                onKeyDown={(e) => e.key === "Enter" && handleQuickEditSave(item)}
+                autoFocus
+                placeholder={item.unit_type === "count" ? "5" : "50%"}
+              />
+            ) : (
+              <div
+                className="stock-row-percent"
+                onClick={() => handleQuickEdit(item)}
+                title={item.unit_type === "count" ? "Tap to edit" : "Tap to edit (50%, 350ml)"}
+              >
+                {item.unit_type === "count"
+                  ? item.current_ml
+                  : `${percent}%`}
+              </div>
+            )
+          ) : (
+            <div className="stock-row-percent" style={{ cursor: "default" }}>
+              {item.unit_type === "count" ? item.current_ml : `${percent}%`}
             </div>
-          )
-        ) : (
-          <div className="stock-row-percent" style={{ cursor: "default" }}>
-            {item.unit_type === "count" ? item.current_ml : `${percent}%`}
+          )}
+        </div>
+        <div className="stock-row-drinks-toggle" onClick={() => toggleExpanded(item.id)}>
+          <span className="drinks-count">
+            {drinkCount !== undefined ? `${drinkCount} drink${drinkCount !== 1 ? "s" : ""}` : "View drinks"}
+          </span>
+          <span className={`expand-arrow ${isExpanded ? "expanded" : ""}`}>▼</span>
+        </div>
+        {isOwner && (
+          <div className="stock-row-controls">
+            <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>−</button>
+            <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>+</button>
+            <button
+              className={`btn btn-xs ${inShoppingList ? "btn-success" : "btn-secondary"}`}
+              onClick={() => !inShoppingList && handleAddToShopping(item)}
+              disabled={inShoppingList}
+              title={inShoppingList ? "Already in shopping list" : "Add to shopping list"}
+            >
+              🛒
+            </button>
+            <button className="btn btn-secondary btn-xs" onClick={() => handleRefill(item)}>Refill</button>
+            <button className="btn btn-secondary btn-xs" onClick={() => handleEdit(item)}>Edit</button>
+            <button className="btn btn-danger btn-xs" onClick={() => handleDelete(item.id)}>✕</button>
           </div>
         )}
       </div>
-      {isOwner && (
-        <div className="stock-row-controls">
-          <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? -1 : -30)}>−</button>
-          <button className="volume-btn-sm" onClick={() => handleVolumeChange(item, item.unit_type === "count" ? 1 : 30)}>+</button>
-          <button
-            className={`btn btn-xs ${inShoppingList ? "btn-success" : "btn-secondary"}`}
-            onClick={() => !inShoppingList && handleAddToShopping(item)}
-            disabled={inShoppingList}
-            title={inShoppingList ? "Already in shopping list" : "Add to shopping list"}
-          >
-            🛒
-          </button>
-          <button className="btn btn-secondary btn-xs" onClick={() => handleRefill(item)}>Refill</button>
-          <button className="btn btn-secondary btn-xs" onClick={() => handleEdit(item)}>Edit</button>
-          <button className="btn btn-danger btn-xs" onClick={() => handleDelete(item.id)}>✕</button>
+      {isExpanded && (
+        <div className="stock-drinks-list">
+          {drinks.length === 0 ? (
+            <div className="stock-drinks-empty">No drinks use this ingredient</div>
+          ) : (
+            drinks.map((drink) => (
+              <div
+                key={drink.drink_id}
+                className={`stock-drink-item ${drink.on_menu ? "on-menu" : ""}`}
+                onClick={() => navigate(`/drinks?id=${drink.drink_id}`)}
+              >
+                <span className="drink-name">{drink.drink_name}</span>
+                <span className="drink-category">{drink.drink_category}</span>
+                {drink.on_menu ? <span className="on-menu-badge">On Menu</span> : null}
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -443,6 +539,102 @@ export function Stock() {
       ) : (
         <div className="stock-list">
           {filteredStock.map((item) => renderStockItem(item))}
+        </div>
+      )}
+
+      {/* Unavailable Drinks Section */}
+      {unavailableDrinks.length > 0 && (
+        <div className="unavailable-drinks-section">
+          <div
+            className="unavailable-drinks-header"
+            onClick={() => setShowUnavailable(!showUnavailable)}
+          >
+            <h3>
+              Can't Make Yet
+              <span className="unavailable-count">{unavailableDrinks.length}</span>
+            </h3>
+            <span className={`expand-arrow ${showUnavailable ? "expanded" : ""}`}>▼</span>
+          </div>
+          {showUnavailable && (
+            <div className="unavailable-drinks-list">
+              {unavailableDrinks.map((drink) => (
+                <div
+                  key={drink.id}
+                  className="unavailable-drink-item"
+                  onClick={() => setSelectedDrink(drink)}
+                >
+                  <div className="unavailable-drink-info">
+                    <span className="drink-name">{drink.name}</span>
+                    <span className="drink-category">{drink.category}</span>
+                  </div>
+                  <div className="missing-ingredients">
+                    Missing: {drink.missingIngredients.slice(0, 3).join(", ")}
+                    {drink.missingIngredients.length > 3 && ` +${drink.missingIngredients.length - 3} more`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Drink Detail Modal */}
+      {selectedDrink && (
+        <div className="modal-overlay" onMouseDown={() => setSelectedDrink(null)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">{selectedDrink.name}</h2>
+            <p className="drink-category-label">{selectedDrink.category}</p>
+
+            {selectedDrink.description && (
+              <p className="drink-description">{selectedDrink.description}</p>
+            )}
+
+            <div className="form-group">
+              <label className="label">Ingredients</label>
+              <div className="ingredient-list">
+                {selectedDrink.ingredients.map((ing, idx) => (
+                  <div
+                    key={idx}
+                    className={`ingredient-item ${!ing.stock_id ? "missing" : ""} ${ing.optional ? "optional" : ""}`}
+                  >
+                    <span className="ingredient-name">
+                      {ing.name}
+                      {ing.optional && <span className="optional-badge">optional</span>}
+                    </span>
+                    {ing.amount && <span className="ingredient-amount">{ing.amount}</span>}
+                    {!ing.stock_id && !ing.optional && <span className="missing-badge">Not in stock</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {selectedDrink.instructions && (
+              <div className="form-group">
+                <label className="label">Instructions</label>
+                <p className="instructions-text">{selectedDrink.instructions}</p>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem" }}>
+              <button
+                className="btn btn-secondary"
+                style={{ flex: 1 }}
+                onClick={() => setSelectedDrink(null)}
+              >
+                Close
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setSelectedDrink(null);
+                  navigate(`/drinks?id=${selectedDrink.id}`);
+                }}
+              >
+                View in Drinks
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

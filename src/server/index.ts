@@ -121,6 +121,58 @@ app.delete("/api/stock/:id", requireAuth(), (c) => {
   return c.json({ success: true });
 });
 
+// Get drinks that use each stock item
+app.get("/api/stock/:id/drinks", requireAuth(true), (c) => {
+  const id = parseInt(c.req.param("id"));
+  const drinks = ingredientQueries.getDrinksByStockId.all(id);
+  return c.json(drinks);
+});
+
+// Get all drinks that can't be made (missing ingredients or not enough stock)
+app.get("/api/drinks/unavailable", requireAuth(true), (c) => {
+  const drinks = drinkQueries.getAll.all();
+  const allStock = stockQueries.getAll.all();
+
+  const unavailableDrinks = drinks.map((drink) => {
+    const ingredients = ingredientQueries.getByDrinkId.all(drink.id);
+    let canMake = true;
+    const missingIngredients: string[] = [];
+
+    for (const ing of ingredients) {
+      if (ing.optional) continue; // Skip optional ingredients
+
+      if (!ing.stock_id) {
+        // Ingredient not linked to any stock
+        canMake = false;
+        missingIngredients.push(ing.ingredient_name);
+      } else {
+        const stock = allStock.find((s) => s.id === ing.stock_id);
+        if (!stock || stock.current_ml <= 0) {
+          canMake = false;
+          missingIngredients.push(ing.ingredient_name);
+        } else if (ing.amount_ml && stock.current_ml < ing.amount_ml) {
+          canMake = false;
+          missingIngredients.push(`${ing.ingredient_name} (not enough)`);
+        }
+      }
+    }
+
+    return {
+      ...drink,
+      canMake,
+      missingIngredients,
+      ingredients: ingredients.map((ing) => ({
+        name: ing.ingredient_name,
+        amount: ing.amount_text || (ing.amount_ml ? `${ing.amount_ml}ml` : null),
+        optional: ing.optional === 1,
+        stock_id: ing.stock_id,
+      })),
+    };
+  }).filter((d) => !d.canMake);
+
+  return c.json(unavailableDrinks);
+});
+
 // ============ DRINKS ROUTES ============
 
 app.get("/api/drinks", requireAuth(true), (c) => {

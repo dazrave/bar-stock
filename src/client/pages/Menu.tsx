@@ -44,6 +44,7 @@ export function Menu() {
   const [pendingCount, setPendingCount] = useState(0);
   const [filterType, setFilterType] = useState<"all" | "menu" | "category">("all");
   const [filterValue, setFilterValue] = useState<string>("all");
+  const [showUnavailable, setShowUnavailable] = useState(true);
   const { logout, session } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -114,12 +115,24 @@ export function Menu() {
     }
   };
 
-  // Filter drinks based on role
+  // Filter drinks based on role and show unavailable toggle
   const getVisibleDrinks = (drinks: MenuDrink[]) => {
-    if (isOwner) return drinks;
+    if (isOwner) {
+      // Owner can toggle showing unavailable drinks
+      if (showUnavailable) {
+        return drinks;
+      }
+      // Hide unavailable when toggle is off
+      return drinks.filter((d) => d.canMake);
+    }
     // Guests only see: canMake = true AND menu_hidden = 0
     return drinks.filter((d) => d.canMake && d.menu_hidden === 0);
   };
+
+  // Count unavailable drinks for the toggle badge
+  const unavailableCount = menus.reduce((count, menu) => {
+    return count + menu.drinks.filter(d => !d.canMake).length;
+  }, 0);
 
   // Get all visible drinks across all menus (deduped by drink id)
   const allVisibleDrinks = (() => {
@@ -223,6 +236,19 @@ export function Menu() {
               {cat}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Show unavailable toggle (owner only) */}
+      {isOwner && unavailableCount > 0 && (
+        <div className="menu-availability-toggle">
+          <div
+            className={`toggle-switch ${showUnavailable ? "active" : ""}`}
+            onClick={() => setShowUnavailable(!showUnavailable)}
+          />
+          <label onClick={() => setShowUnavailable(!showUnavailable)}>
+            Show unavailable drinks ({unavailableCount})
+          </label>
         </div>
       )}
 

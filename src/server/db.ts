@@ -404,6 +404,19 @@ export const ingredientQueries = {
     "INSERT INTO drink_ingredients (drink_id, stock_id, ingredient_name, amount_ml, amount_text, optional) VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
   ),
   deleteByDrinkId: db.query<null, [number]>("DELETE FROM drink_ingredients WHERE drink_id = ?"),
+  // Get drinks that use a specific stock item
+  getDrinksByStockId: db.query<{ drink_id: number; drink_name: string; drink_category: string; on_menu: number }, [number]>(
+    `SELECT DISTINCT
+       d.id as drink_id,
+       d.name as drink_name,
+       d.category as drink_category,
+       CASE WHEN md.drink_id IS NOT NULL THEN 1 ELSE 0 END as on_menu
+     FROM drink_ingredients di
+     JOIN drinks d ON d.id = di.drink_id
+     LEFT JOIN menu_drinks md ON md.drink_id = d.id
+     WHERE di.stock_id = ?
+     ORDER BY d.name`
+  ),
 };
 
 // Passcode queries

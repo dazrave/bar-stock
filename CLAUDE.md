@@ -86,9 +86,21 @@ Default passcodes (change in Settings):
 
 ## Deployment
 Runs on Proxmox LXC container with systemd service.
+
+**Server Access:**
+- Host: `192.168.0.23`
+- User: `root`
+- Password: `EqualPurpleMouse`
+
 Service file: `/etc/systemd/system/barstock.service`
 
 ```bash
+# SSH into server
+ssh root@192.168.0.23
+
+# On the server:
+cd /opt/bar-stock
+git pull
 systemctl restart barstock  # Restart after updates
 journalctl -u barstock -f   # View logs
 ```
