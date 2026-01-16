@@ -251,12 +251,13 @@ export function Menu() {
       {unavailableCount > 0 && (
         <div className="menu-availability-toggle">
           <div
-            className={`toggle-switch ${showUnavailable ? "active" : ""}`}
+            className={`toggle-btn ${showUnavailable ? "active" : ""}`}
             onClick={() => setShowUnavailable(!showUnavailable)}
-          />
-          <label onClick={() => setShowUnavailable(!showUnavailable)}>
-            Show unavailable drinks ({unavailableCount})
-          </label>
+          >
+            <div className="toggle-indicator" />
+            <span className="toggle-label">Show unavailable</span>
+            <span className="toggle-count">{unavailableCount}</span>
+          </div>
         </div>
       )}
 
@@ -301,13 +302,14 @@ export function Menu() {
       ) : (
         <div className="grid grid-2">
           {filteredDrinks.map((drink) => {
-            const isGhosted = isOwner && (!drink.canMake || drink.menu_hidden === 1);
+            const isUnavailable = !drink.canMake;
+            const isHiddenByOwner = isOwner && drink.menu_hidden === 1;
             const showLowWarning = drink.canMake && drink.servingsLeft <= 3;
 
             return (
               <div
                 key={drink.id}
-                className="card"
+                className={`card menu-drink-card ${isUnavailable ? "unavailable" : ""}`}
                 onClick={() => {
                   setSelectedDrink(drink);
                   // Find which menu this drink belongs to
@@ -316,7 +318,7 @@ export function Menu() {
                 }}
                 style={{
                   cursor: "pointer",
-                  opacity: isGhosted ? 0.5 : 1,
+                  opacity: isHiddenByOwner ? 0.5 : undefined,
                   position: "relative",
                 }}
               >
@@ -339,7 +341,6 @@ export function Menu() {
                     className="drink-image"
                     style={{
                       marginBottom: "0.75rem",
-                      filter: isGhosted ? "grayscale(70%)" : "none",
                     }}
                   />
                 )}

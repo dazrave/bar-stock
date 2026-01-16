@@ -1015,60 +1015,107 @@ body {
   white-space: pre-wrap;
 }
 
-/* Menu unavailable toggle */
+/* Menu unavailable toggle - mobile friendly pill button */
 .menu-availability-toggle {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
   margin-bottom: 1rem;
-  padding: 0.75rem 1rem;
+}
+
+.menu-availability-toggle .toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
   background: var(--bg-card);
-  border-radius: 0.5rem;
-}
-
-.menu-availability-toggle label {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-  user-select: none;
-}
-
-.toggle-switch {
-  position: relative;
-  width: 2.5rem;
-  height: 1.5rem;
-  background: var(--bg-secondary);
+  border: 2px solid var(--bg-secondary);
   border-radius: 9999px;
   cursor: pointer;
+  transition: all 0.2s;
+  min-height: 3rem;
+  touch-action: manipulation;
+}
+
+.menu-availability-toggle .toggle-btn:active {
+  transform: scale(0.98);
+}
+
+.menu-availability-toggle .toggle-btn.active {
+  background: rgba(124, 58, 237, 0.15);
+  border-color: var(--accent);
+}
+
+.menu-availability-toggle .toggle-indicator {
+  position: relative;
+  width: 2.75rem;
+  height: 1.625rem;
+  background: var(--bg-secondary);
+  border-radius: 9999px;
+  flex-shrink: 0;
   transition: background-color 0.2s;
 }
 
-.toggle-switch.active {
+.menu-availability-toggle .toggle-btn.active .toggle-indicator {
   background: var(--accent);
 }
 
-.toggle-switch::after {
+.menu-availability-toggle .toggle-indicator::after {
   content: '';
   position: absolute;
-  top: 0.125rem;
-  left: 0.125rem;
+  top: 0.1875rem;
+  left: 0.1875rem;
   width: 1.25rem;
   height: 1.25rem;
   background: white;
   border-radius: 50%;
   transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.toggle-switch.active::after {
-  transform: translateX(1rem);
+.menu-availability-toggle .toggle-btn.active .toggle-indicator::after {
+  transform: translateX(1.125rem);
+}
+
+.menu-availability-toggle .toggle-label {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.menu-availability-toggle .toggle-btn.active .toggle-label {
+  color: var(--text-primary);
+}
+
+.menu-availability-toggle .toggle-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 9999px;
+}
+
+.menu-availability-toggle .toggle-btn.active .toggle-count {
+  background: var(--accent);
+  color: white;
 }
 
 /* Menu drink unavailable state */
-.menu-drink-unavailable {
-  opacity: 0.5;
-  filter: grayscale(30%);
+.menu-drink-card.unavailable {
+  opacity: 0.55;
 }
 
-.menu-drink-unavailable .made-it-btn {
+.menu-drink-card.unavailable .drink-image {
+  filter: grayscale(40%);
+}
+
+.menu-drink-card.unavailable .made-it-btn {
   display: none;
 }
