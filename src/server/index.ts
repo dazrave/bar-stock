@@ -1587,6 +1587,82 @@ app.post("/api/menus/:menuId/drinks/:drinkId/toggle-hidden", requireAuth(), (c) 
   return c.json(result || { success: true });
 });
 
+// Generate AI description for a menu
+app.post("/api/menus/:id/generate-description", requireAuth(), async (c) => {
+  const id = parseInt(c.req.param("id"));
+  const { prompt } = await c.req.json();
+
+  const menu = menuQueries.getById.get(id);
+  if (!menu) {
+    return c.json({ error: "Menu not found" }, 404);
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "OpenAI API key not configured" }, 500);
+  }
+
+  // Get all drinks in this menu with their details
+  const menuDrinks = menuDrinkQueries.getDrinksForMenu.all(id);
+  const drinkSummaries = menuDrinks.map((drink) => {
+    const ingredients = ingredientQueries.getByDrinkId.all(drink.id);
+    const ingredientList = ingredients.map((i) => i.ingredient_name).join(", ");
+    return `- ${drink.name} (${drink.category}): ${drink.description || ingredientList}`;
+  }).join("\n");
+
+  // Build context from existing description
+  const existingContext = menu.description
+    ? `Current description: "${menu.description}"\n\n`
+    : "";
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a creative copywriter for a home bar menu. Write short, enticing menu descriptions that capture the theme or vibe of the drink selection. Keep it under 25 words. Be evocative and fun. No quotes around the response.",
+          },
+          {
+            role: "user",
+            content: prompt
+              ? `${prompt}\n\n${existingContext}Menu: "${menu.name}"\n\nDrinks on this menu:\n${drinkSummaries}`
+              : `Write a short menu description for "${menu.name}".\n\n${existingContext}Drinks on this menu:\n${drinkSummaries}`,
+          },
+        ],
+        max_tokens: 80,
+        temperature: 0.8,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("OpenAI error:", error);
+      return c.json({ error: "Failed to generate description" }, 500);
+    }
+
+    const data = await response.json();
+    const description = data.choices?.[0]?.message?.content?.trim();
+
+    if (description) {
+      const updated = menuQueries.update.get(menu.name, description, menu.active, menu.sort_order || 0, id);
+      return c.json({ success: true, menu: updated });
+    }
+
+    return c.json({ error: "No description generated" }, 500);
+  } catch (err) {
+    console.error("OpenAI request failed:", err);
+    return c.json({ error: "Failed to connect to OpenAI" }, 500);
+  }
+});
+
 // ============ QUEUE (DRINK REQUEST) ROUTES ============
 
 // Get queue status (bar open/closed)

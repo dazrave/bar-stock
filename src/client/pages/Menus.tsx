@@ -43,6 +43,8 @@ export function Menus() {
     name: "",
     description: "",
   });
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [generatingDescription, setGeneratingDescription] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -203,6 +205,37 @@ export function Menus() {
     if (!selectedMenu) return drinks;
     const menuDrinkIds = new Set(selectedMenu.drinks.map((d) => d.id));
     return drinks.filter((d) => !menuDrinkIds.has(d.id));
+  };
+
+  const handleGenerateDescription = async () => {
+    if (!editingMenu) return;
+
+    setGeneratingDescription(true);
+    try {
+      const res = await fetch(`/api/menus/${editingMenu.id}/generate-description`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt || null }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        showToast(data.error || "Failed to generate description", "error");
+        return;
+      }
+
+      const data = await res.json();
+      if (data.menu) {
+        setFormData((prev) => ({ ...prev, description: data.menu.description || "" }));
+        setMenus((prev) => prev.map((m) => (m.id === editingMenu.id ? { ...m, description: data.menu.description } : m)));
+        showToast("Description generated!");
+        setAiPrompt("");
+      }
+    } catch (err) {
+      showToast("Failed to generate description", "error");
+    } finally {
+      setGeneratingDescription(false);
+    }
   };
 
   if (loading) {
@@ -368,6 +401,34 @@ export function Menus() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
             </div>
+
+            {/* AI Description Generator (only for existing menus) */}
+            {editingMenu && editingMenu.drinks.length > 0 && (
+              <div className="form-group" style={{ background: "var(--bg-secondary)", padding: "1rem", borderRadius: "0.5rem" }}>
+                <label className="label" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  AI Description Generator
+                </label>
+                <input
+                  className="input"
+                  placeholder="e.g. Make it sound tropical and fun..."
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  style={{ marginBottom: "0.5rem" }}
+                />
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ width: "100%" }}
+                  onClick={handleGenerateDescription}
+                  disabled={generatingDescription}
+                >
+                  {generatingDescription ? "Generating..." : "Generate Description"}
+                </button>
+                <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
+                  Uses AI to create a description based on the drinks in this menu.
+                  {aiPrompt ? "" : " Add a prompt above to guide the style."}
+                </p>
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.5rem" }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowModal(false)}>
