@@ -8,22 +8,20 @@
     <title>BarStock</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍸</text></svg>" />
     <script>
-      // Cache-bust CSS and JS until 22/01/2026, then load normally
+      // Cache-bust CSS until 22/01/2026
       (function() {
         var cutoff = new Date('2026-01-22T00:00:00').getTime();
         var now = Date.now();
-        var minute = Math.floor(now / 60000);
-        window.cacheBust = now < cutoff ? '?v=' + minute : '';
-
+        var bust = now < cutoff ? '?v=' + Math.floor(now / 60000) : '';
         var link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = './styles.css' + window.cacheBust;
+        link.href = './styles.css' + bust;
         document.head.appendChild(link);
       })();
     </script>
   </head>
   <body>
     <div id="root"></div>
-    <script>document.write('<script type="module" src="./main.tsx' + window.cacheBust + '"><\/script>');</script>
+    <script type="module" src="./main.tsx"></script>
   </body>
 </html>
