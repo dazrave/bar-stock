@@ -1832,10 +1832,10 @@ const server = Bun.serve({
       headers: { "Content-Type": "text/html" },
     });
   },
-  development: {
+  development: process.env.NODE_ENV !== "production" ? {
     hmr: true,
     console: true,
-  },
+  } : false,
 });
 
 console.log(`
